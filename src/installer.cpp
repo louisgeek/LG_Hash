@@ -8,16 +8,16 @@
 #include <string>
 #include <vector>
 
-#define IDR_HASHPAGE_DLL   101
-#define kUninstallKey      L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\HashPage"
-#define kProductName       L"HashPage"
-#define kVersion           L"1.2.0"
+#define IDR_LG_HASH_DLL   101
+#define kUninstallKey      L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\LG_Hash"
+#define kProductName       L"LG_Hash"
+#define kVersion           L"1.3.0"
 
-// 安装目录：%LOCALAPPDATA%\HashPage
+// 安装目录：%LOCALAPPDATA%\LG_Hash
 static std::wstring GetInstallDir() {
     wchar_t path[MAX_PATH];
     if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, path)))
-        return std::wstring(path) + L"\\HashPage";
+        return std::wstring(path) + L"\\LG_Hash";
     return std::wstring();
 }
 
@@ -35,7 +35,7 @@ static std::wstring ModulePath() {
 }
 
 static bool ExtractDll(const std::wstring& outPath) {
-    HRSRC hRes = FindResourceW(nullptr, MAKEINTRESOURCEW(IDR_HASHPAGE_DLL), RT_RCDATA);
+    HRSRC hRes = FindResourceW(nullptr, MAKEINTRESOURCEW(IDR_LG_HASH_DLL), RT_RCDATA);
     if (!hRes) return false;
     const DWORD size = SizeofResource(nullptr, hRes);
     void* data = LockResource(LoadResource(nullptr, hRes));
@@ -97,7 +97,7 @@ static void RegSetDword(HKEY root, const wchar_t* sub, const wchar_t* name, DWOR
 static void RegisterUninstallEntry(const std::wstring& installDir) {
     RegSetString(HKEY_CURRENT_USER, kUninstallKey, L"DisplayName", kProductName);
     RegSetString(HKEY_CURRENT_USER, kUninstallKey, L"DisplayVersion", kVersion);
-    RegSetString(HKEY_CURRENT_USER, kUninstallKey, L"Publisher", L"HashPage");
+    RegSetString(HKEY_CURRENT_USER, kUninstallKey, L"Publisher", kProductName);
     RegSetString(HKEY_CURRENT_USER, kUninstallKey, L"InstallLocation", installDir);
     RegSetString(HKEY_CURRENT_USER, kUninstallKey, L"DisplayIcon", ModulePath());
     RegSetString(HKEY_CURRENT_USER, kUninstallKey, L"UninstallString",
@@ -113,7 +113,7 @@ static void RemoveUninstallEntry() {
     RegDeleteTreeW(HKEY_CURRENT_USER, kUninstallKey);
 }
 
-// 升级时清理同目录下的旧 DLL：包括被占用时改用过的 HashPage_XXXXXXXX.dll
+// 升级时清理同目录下的旧 DLL：包括被占用时改用过的 LG_Hash_XXXXXXXX.dll
 //
 // 注意：这里只删文件，不调用 regsvr32 /u。
 // 所有版本共用同一个 CLSID，DllUnregisterServer 会把整个 CLSID 树删掉；
@@ -122,7 +122,7 @@ static void RemoveUninstallEntry() {
 static int CleanStaleDlls(const std::wstring& dir, const std::wstring& keep) {
     int removed = 0;
     WIN32_FIND_DATAW fd{};
-    HANDLE h = FindFirstFileW((dir + L"\\HashPage*.dll").c_str(), &fd);
+    HANDLE h = FindFirstFileW((dir + L"\\LG_Hash*.dll").c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) return 0;
     do {
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
@@ -180,7 +180,7 @@ static int DoInstall(bool quiet) {
     }
     CreateDirectoryW(dir.c_str(), nullptr);
 
-    std::wstring dllPath = dir + L"\\HashPage.dll";
+    std::wstring dllPath = dir + L"\\LG_Hash.dll";
     if (!ExtractDll(dllPath)) {
         // 旧版仍被 explorer 加载时会锁定文件，退回带序号的文件名
         dllPath = UniquePath(dllPath);
@@ -213,7 +213,7 @@ static int DoInstall(bool quiet) {
         msg += L"支持算法：CRC32 / MD5 / SHA-1 / SHA-256 / SHA-512\n";
         msg += L"切到「哈希」页即自动开始计算，无需再点按钮。\n\n";
         msg += L"安装位置：" + dllPath + L"\n";
-        msg += L"卸载：设置 → 应用 → 已安装的应用 → HashPage";
+        msg += L"卸载：设置 → 应用 → 已安装的应用 → LG_Hash";
         MessageBoxW(nullptr, msg.c_str(), kProductName, MB_OK | MB_ICONINFORMATION);
     }
     return 0;
@@ -221,12 +221,12 @@ static int DoInstall(bool quiet) {
 
 static int DoUninstall(bool quiet) {
     const std::wstring dir = GetInstallDir();
-    const std::wstring mainDll = dir + L"\\HashPage.dll";
+    const std::wstring mainDll = dir + L"\\LG_Hash.dll";
 
     RunRegsvr32(mainDll, true, nullptr);
     CleanStaleDlls(dir, std::wstring()); // keep 为空表示全部清理
 
-    // 兜底：注册可能被升级时改名次数多的旧 DLL（HashPage_XXXXXXXX.dll）占用，
+    // 兜底：注册可能被升级时改名次数多的旧 DLL（LG_Hash_XXXXXXXX.dll）占用，
     // 此时 mainDll 可能已不存在，regsvr32 也会失败，但 CLSID 树仍留在注册表里。
     // 先判断注册项是否还指向本安装目录的 DLL；是就整个删树，避免卸载后残留。
     {
@@ -312,19 +312,19 @@ static void ShowUsage() {
     // 0x000D 0x000A 由码点构造，避免源码中出现跨行的转义字符
     const wchar_t CRLF[3] = { (wchar_t)0x0D, (wchar_t)0x0A, 0 };
     std::wstring msg;
-    msg += L"HashPage 安装程序";
+    msg += L"LG_Hash 安装程序";
     msg += CRLF; msg += CRLF;
-    msg += L"  HashPage.exe                     安装";
+    msg += L"  LG_Hash.exe                     安装";
     msg += CRLF;
-    msg += L"  HashPage.exe /quiet              静默安装";
+    msg += L"  LG_Hash.exe /quiet              静默安装";
     msg += CRLF;
-    msg += L"  HashPage.exe /uninstall          卸载";
+    msg += L"  LG_Hash.exe /uninstall          卸载";
     msg += CRLF;
-    msg += L"  HashPage.exe /uninstall /quiet   静默卸载";
+    msg += L"  LG_Hash.exe /uninstall /quiet   静默卸载";
     msg += CRLF;
-    msg += L"  HashPage.exe /help               显示本帮助";
+    msg += L"  LG_Hash.exe /help               显示本帮助";
     msg += CRLF; msg += CRLF;
-    msg += L"安装到 %LOCALAPPDATA%\\HashPage，注册到当前用户。";
+    msg += L"安装到 %LOCALAPPDATA%\\LG_Hash，注册到当前用户。";
     MessageBoxW(nullptr, msg.c_str(), kProductName, MB_OK | MB_ICONINFORMATION);
 }
 
@@ -344,7 +344,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR cmdLine, int) {
             const wchar_t CRLF2[3] = { (wchar_t)0x0D, (wchar_t)0x0A, 0 };
             std::wstring tip = L"无法识别的参数：" + unknown;
             tip += CRLF2; tip += CRLF2;
-            tip += L"运行 HashPage.exe /help 查看用法。";
+            tip += L"运行 LG_Hash.exe /help 查看用法。";
             MessageBoxW(nullptr, tip.c_str(), kProductName, MB_OK | MB_ICONERROR);
         }
         return 1;

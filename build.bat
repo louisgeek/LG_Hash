@@ -1,13 +1,13 @@
 @echo off
-rem Build HashPage for one or more architectures.
+rem Build LG_Hash for one or more architectures.
 rem
 rem   build.bat                 x64 only (default)
 rem   build.bat x64 arm64       both
 rem   build.bat arm64           ARM64 only
 rem
 rem Outputs:
-rem   build\HashPage.dll/.exe           x64
-rem   build\arm64\HashPage.dll/.exe     ARM64
+rem   build\LG_Hash.dll/.exe           x64
+rem   build\arm64\LG_Hash.dll/.exe     ARM64
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 if not exist build mkdir build
@@ -37,9 +37,9 @@ echo.
 echo BUILD OK
 for %%a in (%ARCHES%) do (
     if /i "%%a"=="x64" (
-        echo   build\HashPage.dll / .exe          x64
+        echo   build\LG_Hash.dll / .exe          x64
     ) else (
-        echo   build\%%a\HashPage.dll / .exe     %%a
+        echo   build\%%a\LG_Hash.dll / .exe     %%a
     )
 )
 exit /b 0
@@ -87,18 +87,18 @@ if /i not "%ARCH%"=="x64" (
 )
 
 echo [%ARCH% 1/3] resource
-"%RC%" /nologo /I src /fo %OUTDIR%\HashPage.res src\HashPage.rc
+"%RC%" /nologo /I src /fo %OUTDIR%\LG_Hash.res src\LG_Hash.rc
 if errorlevel 1 exit /b 1
 
 echo [%ARCH% 2/3] shell extension dll
-cl %COMMON% /LD src\dllmain.cpp src\HashExt.cpp src\HashPage.cpp src\HashJob.cpp src\HashEngine.cpp src\Lang.cpp src\Theme.cpp src\PathUtil.cpp /Fo:%OUTDIR%\ /Fe:%OUTDIR%\HashPage.dll /link /DLL %OUTDIR%\HashPage.res %LIBS%
+cl %COMMON% /LD src\dllmain.cpp src\HashExt.cpp src\LG_Hash.cpp src\HashJob.cpp src\HashEngine.cpp src\Lang.cpp src\Theme.cpp src\PathUtil.cpp /Fo:%OUTDIR%\ /Fe:%OUTDIR%\LG_Hash.dll /link /DLL %OUTDIR%\LG_Hash.res %LIBS%
 if errorlevel 1 exit /b 1
 
 echo [%ARCH% 3/3] installer exe
-rem installer.rc embeds HashPage.dll from OUTDIR, so it must run after the DLL link
-"%RC%" /nologo /I src /I %OUTDIR% /d HASHPAGE_DLL_PATH=%OUTDIR%\HashPage.dll /fo %OUTDIR%\installer.res src\installer.rc
+rem installer.rc embeds LG_Hash.dll from OUTDIR, so it must run after the DLL link
+"%RC%" /nologo /I src /I %OUTDIR% /d LG_HASH_DLL_PATH=%OUTDIR%\LG_Hash.dll /fo %OUTDIR%\installer.res src\installer.rc
 if errorlevel 1 exit /b 1
-cl %COMMON% /D_WINDOWS src\installer.cpp /Fo:%OUTDIR%\ /Fe:%OUTDIR%\HashPage.exe /link /SUBSYSTEM:WINDOWS %OUTDIR%\installer.res %LIBS%
+cl %COMMON% /D_WINDOWS src\installer.cpp /Fo:%OUTDIR%\ /Fe:%OUTDIR%\LG_Hash.exe /link /SUBSYSTEM:WINDOWS %OUTDIR%\installer.res %LIBS%
 if errorlevel 1 exit /b 1
 
 exit /b 0

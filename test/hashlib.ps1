@@ -73,7 +73,7 @@ public class HashTest {
 
     // 逐个切换标签页，优先按「哈希 / Hash」标题定位（比控件 ID 可靠：
     // 第三方属性页也可能撞 ID），找不到标题时退回 IDC_COPYALL(1008) 识别。
-    public static int SelectHashPage(IntPtr win) {
+    public static int SelectLG_Hash(IntPtr win) {
         IntPtr tab = FindTab(win);
         if (tab == IntPtr.Zero) return -1;
         IntPtr sheet = GetParent(tab);

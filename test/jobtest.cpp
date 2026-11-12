@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-// 多选支持（1.3）的 Job 层测试：验证 HashJob（从 HashPage.cpp 拆出的
+// 多选支持（1.3）的 Job 层测试：验证 HashJob（从 LG_Hash.cpp 拆出的
 // 计算任务层）对多文件的串行计算、结果数组与取消语义。
 //
 // 为什么不做窗口级 UI 测试：从外部驱动 explorer 多选属性表在测试机上
@@ -73,7 +73,7 @@ int wmain() {
     setvbuf(stdout, nullptr, _IONBF, 0);
     wchar_t tmp[MAX_PATH] = {};
     if (GetTempPathW(MAX_PATH, tmp) == 0) return 1;
-    const std::wstring dir = std::wstring(tmp) + L"hashpage_job_";
+    const std::wstring dir = std::wstring(tmp) + L"lg_hash_job_";
     CreateDirectoryW(dir.c_str(), nullptr);
 
     const std::wstring data1 = L"multi-select test file ONE\r\n";

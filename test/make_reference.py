@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """生成测试参考值：用 Python 标准库独立实现，不复用被测代码。
 
-CRC32 用 zlib，MD5/SHA 用 hashlib，与 HashPage 内部的 bcrypt 实现互不相关，
+CRC32 用 zlib，MD5/SHA 用 hashlib，与 LG_Hash 内部的 bcrypt 实现互不相关，
 因此可作为交叉验证的基准。
 """
 import hashlib

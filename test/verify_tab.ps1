@@ -30,7 +30,7 @@ Start-Sleep -Milliseconds 1500
 
 $win = [HashTest]::FindProps($leaf)
 if ($win -eq [IntPtr]::Zero) { throw 'properties window not found' }
-$page = [HashTest]::SelectHashPage($win)
+$page = [HashTest]::SelectLG_Hash($win)
 if ($page -lt 0) { throw 'hash page not found among tabs' }
 "PAGE INDEX: $page"
 

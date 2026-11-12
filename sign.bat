@@ -58,8 +58,8 @@ if not defined THUMB if not defined PFX (
 )
 if defined THUMB set "THUMB=%THUMB: =%"
 
-set FILES=build\HashPage.dll build\HashPage.exe
-if exist build\arm64\HashPage.dll set FILES=%FILES% build\arm64\HashPage.dll build\arm64\HashPage.exe
+set FILES=build\LG_Hash.dll build\LG_Hash.exe
+if exist build\arm64\LG_Hash.dll set FILES=%FILES% build\arm64\LG_Hash.dll build\arm64\LG_Hash.exe
 
 set FAILED=0
 for %%f in (%FILES%) do (

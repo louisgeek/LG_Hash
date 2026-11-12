@@ -14,5 +14,5 @@ struct PageContext {
     bool Multi() const { return paths.size() > 1; }
 };
 
-INT_PTR CALLBACK HashPageProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-UINT CALLBACK HashPageCallback(HWND hwnd, UINT msg, LPPROPSHEETPAGEW ppsp);
+INT_PTR CALLBACK LG_HashProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+UINT CALLBACK LG_HashCallback(HWND hwnd, UINT msg, LPPROPSHEETPAGEW ppsp);

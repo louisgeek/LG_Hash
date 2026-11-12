@@ -2,7 +2,7 @@
 #include <cstdio>
 
 // 语言表自检：确认每个 Id 都返回非空文案，并打印关键项。
-// 语言由 HKCU\Software\HashPage\LangId（LCID 或 LANGID）或系统默认 UI 语言决定。
+// 语言由 HKCU\Software\LG_Hash\LangId（LCID 或 LANGID）或系统默认 UI 语言决定。
 int wmain() {
     const Lang::Id ids[] = {
         Lang::Id::PageTitle, Lang::Id::VerifyGroup, Lang::Id::Computing, Lang::Id::Done,
@@ -23,8 +23,7 @@ int wmain() {
         Lang::Id::AlgoSHA256, Lang::Id::AlgoSHA512, Lang::Id::NoAlgoSelected,
         Lang::Id::SettingsTitle, Lang::Id::AlgoGroup, Lang::Id::DisplayGroup,
         Lang::Id::DlgOk, Lang::Id::DlgCancel,
-        Lang::Id::MenuUppercase, Lang::Id::MenuUninstall,
-        Lang::Id::UninstallConfirm, Lang::Id::UninstallFailed, Lang::Id::UninstallMissing,
+        Lang::Id::MenuUppercase,
         // 交互反馈（1.4 UI 优化）
         Lang::Id::VerifyCue, Lang::Id::Copied, Lang::Id::FileSelectTip, Lang::Id::CopySelTip,
         // 多选（1.3）

@@ -25,7 +25,7 @@ void Theme::Refresh() {
 
     // 用户显式配置优先：0=跟随系统 1=浅色 2=深色
     DWORD mode = 0;
-    if (!ReadDword(HKEY_CURRENT_USER, L"Software\\HashPage", L"Theme", &mode)) mode = 0;
+    if (!ReadDword(HKEY_CURRENT_USER, L"Software\\LG_Hash", L"Theme", &mode)) mode = 0;
 
     if (mode == 1) {
         g_dark = false;

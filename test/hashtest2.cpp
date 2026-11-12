@@ -15,7 +15,7 @@ int wmain() {
         wprintf(L"cannot get temp path\n");
         return 1;
     }
-    const std::wstring base = std::wstring(tmp) + L"hashpage_edge_";
+    const std::wstring base = std::wstring(tmp) + L"lg_hash_edge_";
     const std::wstring names[3] = { base + L"empty.bin", base + L"1mb.bin", base + L"1mb1.bin" };
     const int sizes[3] = { 0, 1 << 20, (1 << 20) + 1 };
 

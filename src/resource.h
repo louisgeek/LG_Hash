@@ -1,6 +1,6 @@
 #pragma once
 
-#define IDD_HASHPAGE      101
+#define IDD_LG_HASH      101
 #define IDD_SETTINGS      102
 
 #define IDC_FILEINFO      1001
@@ -40,5 +40,4 @@
 #define IDC_SET_DISPGROUP 1106
 #define IDC_SET_UPPER     1107
 #define IDC_SET_LINK      1108
-#define IDC_SET_UNINSTALL 1109
 #define IDC_STATIC        -1

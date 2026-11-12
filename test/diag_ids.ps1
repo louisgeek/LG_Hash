@@ -12,7 +12,7 @@ $win = [HashTest]::FindProps('sample.txt')
 "WIN: $win"
 if ($win -eq [IntPtr]::Zero) { exit 1 }
 
-$page = [HashTest]::SelectHashPage($win)
+$page = [HashTest]::SelectLG_Hash($win)
 "PAGE: $page"
 
 $ch = [HashTest]::Children($win)

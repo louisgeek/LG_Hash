@@ -22,10 +22,9 @@ namespace Lang {
         // 设置区 / 算法勾选
         AlgoCRC32, AlgoMD5, AlgoSHA1, AlgoSHA256, AlgoSHA512,
         NoAlgoSelected,
-        // 独立设置对话框（1.4）：标题/分组/确定取消；卸载与「大写显示」文案
+        // 独立设置对话框（1.4）：标题/分组/确定取消；「大写显示」文案
         SettingsTitle, AlgoGroup, DisplayGroup, DlgOk, DlgCancel,
-        MenuUppercase, MenuUninstall,
-        UninstallConfirm, UninstallFailed, UninstallMissing,
+        MenuUppercase,
         // 交互反馈（1.4 UI 优化）
         VerifyCue, Copied, FileSelectTip, CopySelTip,
         // 多选（1.3）

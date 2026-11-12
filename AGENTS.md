@@ -4,8 +4,8 @@
 
 ## 这是什么
 
-Windows 资源管理器 Shell 属性页扩展（`HashPage.dll`）：右键文件 → 属性 → 「哈希」页，
-计算 CRC32 / MD5 / SHA-1 / SHA-256 / SHA-512，支持粘贴校验、复制、导出 `*.sums`。
+Windows 资源管理器 Shell 属性页扩展（`LG_Hash.dll`）：右键文件 → 属性 → 「哈希」页，
+计算 CRC32 / MD5 / SHA-1 / SHA-256 / SHA-512，支持粘贴校验、复制、导出 `*.SUMS.txt`。
 C++17，Win32 裸 API，无第三方依赖。构建依赖：Visual Studio（C++ 工作负载）+ Windows SDK。
 
 ## 铁律
@@ -35,8 +35,8 @@ UI 测试需要交互式桌面会话（会真的打开属性窗口）：
 
 1. **参考值必须独立生成**：`test/reference.txt` 由 `test/make_reference.py`（Python 标准库）产出，不能用被测代码自证。
 2. **`.ps1` 必须带 UTF-8 BOM + CRLF**（PowerShell 5.1 把无 BOM 当 ANSI，中文注释会破坏语法）；`.bat` 纯 ASCII + CRLF。
-3. **`installer.rc` 的 `IDR_HASHPAGE_DLL` 不能省**：`installer.cpp` 里的 `#define` 资源编译器看不到，漏了 RCDATA 被静默丢弃，安装器提不出 DLL。
-4. **ARM64**：`rc.exe` 固定用主机的；内嵌 DLL 路径经 `rc /d HASHPAGE_DLL_PATH=` 传入，否则 ARM64 安装器打包 x64 的 DLL。
+3. **`installer.rc` 的 `IDR_LG_HASH_DLL` 不能省**：`installer.cpp` 里的 `#define` 资源编译器看不到，漏了 RCDATA 被静默丢弃，安装器提不出 DLL。
+4. **ARM64**：`rc.exe` 固定用主机的；内嵌 DLL 路径经 `rc /d LG_HASH_DLL_PATH=` 传入，否则 ARM64 安装器打包 x64 的 DLL。
 5. **跨进程点按钮用 `PostMessage(WM_COMMAND)`**，`BM_CLICK` 会等模态对话框返回而卡死。
 6. **剪贴板可能不可用**（受限会话持续 `ERROR_ACCESS_DENIED`）：测试优先读 ListView 行文本。
 7. **`verify_change.ps1` 会写文件**：先在 `%TEMP%` 复制副本再追加，跑完即删——改脚本时保持该行为。
@@ -50,7 +50,7 @@ UI 测试需要交互式桌面会话（会真的打开属性窗口）：
 src/
   dllmain.cpp      DllMain、IClassFactory、注册 / 反注册
   HashExt.cpp      IShellExtInit（收集选中文件，上限 64）+ IShellPropSheetExt（加页）
-  HashPage.cpp     属性页 UI：渲染、校验、导出、设置对话框、深色自绘
+  LG_Hash.cpp     属性页 UI：渲染、校验、导出、设置对话框、深色自绘
   HashJob.cpp/.h   Job 生命周期 + 工作者线程（多文件串行计算）
   HashEngine.cpp   CNG 多算法单遍流式计算 + CRC32 + 变更检测（纯计算，无 UI）
   Lang.cpp/.h      中英文文案表

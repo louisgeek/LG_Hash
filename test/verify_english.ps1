@@ -16,7 +16,7 @@ if (-not (Test-Path $File)) { throw "test file not found: $File" }
 Add-Type -AssemblyName System.Windows.Forms
 . (Join-Path $PSScriptRoot 'hashlib.ps1')
 
-$key = 'HKCU:\Software\HashPage'
+$key = 'HKCU:\Software\LG_Hash'
 $hadKey = Test-Path $key
 $prevLang = $null
 if ($hadKey) {
@@ -33,7 +33,7 @@ try {
 
     $win = [HashTest]::FindProps($leaf)
     if ($win -eq [IntPtr]::Zero) { throw 'properties window not found' }
-    if ([HashTest]::SelectHashPage($win) -lt 0) { throw 'hash page not found' }
+    if ([HashTest]::SelectLG_Hash($win) -lt 0) { throw 'hash page not found' }
     $ch = [HashTest]::Children($win)
 
     # 切到「哈希」页会自动计算，等它算完，让所有文案都渲染出来

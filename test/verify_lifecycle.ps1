@@ -17,7 +17,7 @@ function Open-Page {
     Start-Sleep -Milliseconds 1200
     $win = [HashTest]::FindProps($leaf)
     if ($win -eq [IntPtr]::Zero) { throw 'properties window not found' }
-    if ([HashTest]::SelectHashPage($win) -lt 0) { throw 'hash page not found' }
+    if ([HashTest]::SelectLG_Hash($win) -lt 0) { throw 'hash page not found' }
     return $win
 }
 

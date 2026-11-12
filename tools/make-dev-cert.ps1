@@ -14,7 +14,7 @@
     powershell -ExecutionPolicy Bypass -File tools\make-dev-cert.ps1
 #>
 param(
-    [string]$Subject = 'CN=HashPage Development',
+    [string]$Subject = 'CN=LG_Hash Development',
     [int]$Years = 3,
     [string]$OutFile
 )

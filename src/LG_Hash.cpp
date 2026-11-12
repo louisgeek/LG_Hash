@@ -1,4 +1,4 @@
-#include "HashPage.h"
+#include "LG_Hash.h"
 #include "HashJob.h"
 #include "HashEngine.h"
 #include "HashExt.h"   // g_hModule：对话框资源在 DLL 里，不能用宿主进程的模块句柄
@@ -55,8 +55,6 @@ static LRESULT CustomDrawHeader(LPNMCUSTOMDRAW cd);
 static void RenderCurrent(HWND hwnd, PageState* st);
 // 设置对话框（定义在「设置对话框」一节）也复用按钮自绘
 static LRESULT DrawOwnerButton(const DRAWITEMSTRUCT* dis);
-// 设置对话框里的「卸载…」按钮复用同一套卸载流程（定义在「卸载」一节）
-static void DoUninstall(HWND hwnd);
 
 // ---------------------------------------------------------------- 工具函数
 
@@ -194,11 +192,11 @@ static std::wstring BuildAllLines(HWND hwnd, const wchar_t* fileName,
 
 // ---------------------------------------------------------------- 设置持久化
 
-// 设置存 HKCU\Software\HashPage：
+// 设置存 HKCU\Software\LG_Hash：
 //   Algos  DWORD 位掩码（bit0=CRC32 … bit4=SHA-512），缺省 0x1F 全选
 //   Upper  DWORD 1=大写
 // 与 LangId 同键，读取时机与语言一致（首次使用时，不在 DllMain 里碰注册表）。
-static const wchar_t* kSettingsKey = L"Software\\HashPage";
+static const wchar_t* kSettingsKey = L"Software\\LG_Hash";
 
 static void LoadSettings(PageState* st) {
     for (int i = 0; i < kHashCount; ++i) st->algo[i] = true;
@@ -585,12 +583,12 @@ static bool PickSavePath(HWND owner, const std::wstring& suggested, std::wstring
 
     bool ok = false;
     const COMDLG_FILTERSPEC filters[] = {
-        { Lang::Get(Lang::Id::FilterSums), L"*.sums" },
+        { Lang::Get(Lang::Id::FilterSums), L"*.SUMS.txt" },
         { Lang::Get(Lang::Id::FilterAll), L"*.*" },
     };
     dialog->SetFileTypes(2, filters);
     dialog->SetFileTypeIndex(1);
-    dialog->SetDefaultExtension(L"sums");
+    dialog->SetDefaultExtension(L"SUMS.txt");
     dialog->SetFileName(suggested.c_str());
 
     FILEOPENDIALOGOPTIONS options = 0;
@@ -646,9 +644,9 @@ static void DoExport(HWND hwnd, PageState* st) {
     if (multi) {
         const wchar_t* dot = wcsrchr(name, L'.');
         std::wstring stem = dot ? std::wstring(name, dot - name) : std::wstring(name);
-        suggested = stem + L"_hashes.sums";
+        suggested = stem + L"_hashes.SUMS.txt";
     } else {
-        suggested = std::wstring(name) + L".sums";
+        suggested = std::wstring(name) + L".SUMS.txt";
     }
 
     std::wstring target;
@@ -881,7 +879,6 @@ static INT_PTR CALLBACK SettingsProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM l
         SetDlgItemTextW(dlg, IDOK, Lang::Get(Lang::Id::DlgOk));
         SetDlgItemTextW(dlg, IDCANCEL, Lang::Get(Lang::Id::DlgCancel));
         SetDlgItemTextW(dlg, IDC_SET_UPPER, Lang::Get(Lang::Id::MenuUppercase));
-        SetDlgItemTextW(dlg, IDC_SET_UNINSTALL, Lang::Get(Lang::Id::MenuUninstall));
         for (int i = 0; i < kHashCount; ++i) {
             SetDlgItemTextW(dlg, kSetAlgoIds[i], Lang::Get(kSetAlgoLangs[i]));
             SendMessageW(GetDlgItem(dlg, kSetAlgoIds[i]), BM_SETCHECK,
@@ -893,7 +890,7 @@ static INT_PTR CALLBACK SettingsProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM l
         // 左下角项目链接：显示版本号，套下划线字体（静态文本不支持富文本）
         {
             wchar_t link[64];
-            swprintf(link, 64, L"HashPage %s", kVersionText);
+            swprintf(link, 64, L"LG_Hash %s", kVersionText);
             HWND ctl = GetDlgItem(dlg, IDC_SET_LINK);
             SetWindowTextW(ctl, link);
             LOGFONTW lf{};
@@ -908,7 +905,7 @@ static INT_PTR CALLBACK SettingsProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM l
 
         if (ds->dark) {
             // 深色下按钮同样走自绘，避免浅色按钮压在深色底上
-            for (int id : { IDOK, IDCANCEL, IDC_SET_UNINSTALL }) {
+            for (int id : { IDOK, IDCANCEL }) {
                 HWND b = GetDlgItem(dlg, id);
                 if (!b) continue;
                 const LONG_PTR style = GetWindowLongPtrW(b, GWL_STYLE);
@@ -938,10 +935,6 @@ static INT_PTR CALLBACK SettingsProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM l
             return TRUE;
         case IDC_SET_LINK:
             if (HIWORD(wParam) == STN_CLICKED) OpenProjectPage(dlg);
-            return TRUE;
-        case IDC_SET_UNINSTALL:
-            // 卸载交给安装器的独立进程；触发后属性页会随反注册关闭
-            if (HIWORD(wParam) == BN_CLICKED) DoUninstall(dlg);
             return TRUE;
         default:
             break;
@@ -1018,54 +1011,6 @@ static void OpenSettings(HWND hwnd, PageState* st) {
         RenderCurrent(hwnd, st);   // 勾选/大小写变化只重渲染，不重读盘
         EvaluateVerify(hwnd, st);
     }
-}
-
-// ---------------------------------------------------------------- 卸载
-
-// 属性页里的「卸载」按钮：读注册表卸载条目里的命令，确认后启动安装器 /uninstall。
-// 不在 explorer 进程内直接动手——反注册和删文件都交给独立进程，失败也不影响宿主。
-static void DoUninstall(HWND hwnd) {
-    HKEY h = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER,
-                      L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\HashPage",
-                      0, KEY_READ, &h) != ERROR_SUCCESS) {
-        MessageBoxW(hwnd, Lang::Get(Lang::Id::UninstallMissing),
-                    Lang::Get(Lang::Id::PageTitle), MB_OK | MB_ICONINFORMATION);
-        return;
-    }
-    wchar_t cmd[MAX_PATH * 2] = {};
-    DWORD sz = sizeof(cmd);
-    const LSTATUS got = RegQueryValueExW(h, L"UninstallString", 0, nullptr,
-                                         reinterpret_cast<LPBYTE>(cmd), &sz);
-    RegCloseKey(h);
-    if (got != ERROR_SUCCESS || !cmd[0]) {
-        MessageBoxW(hwnd, Lang::Get(Lang::Id::UninstallMissing),
-                    Lang::Get(Lang::Id::PageTitle), MB_OK | MB_ICONINFORMATION);
-        return;
-    }
-
-    if (MessageBoxW(hwnd, Lang::Get(Lang::Id::UninstallConfirm),
-                    Lang::Get(Lang::Id::PageTitle), MB_OKCANCEL | MB_ICONQUESTION | MB_DEFBUTTON2)
-        != IDOK) {
-        return;
-    }
-
-    // UninstallString 形如 "C:\...\HashPage.exe" /uninstall
-    // 交给 CreateProcess 启动独立进程：反注册和删文件都不在 explorer 内发生
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
-    PROCESS_INFORMATION pi{};
-    wchar_t cmdline[MAX_PATH * 2];
-    wcscpy_s(cmdline, cmd);
-    // CreateProcess 的命令行必须可写
-    if (!CreateProcessW(nullptr, cmdline, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
-        MessageBoxW(hwnd, Lang::Get(Lang::Id::UninstallFailed),
-                    Lang::Get(Lang::Id::PageTitle), MB_OK | MB_ICONERROR);
-        return;
-    }
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    // 卸载器会反注册扩展；宿主属性窗口随即关闭（页面销毁走正常 WM_DESTROY 清理）
 }
 
 // ---------------------------------------------------------------- 外观
@@ -1209,7 +1154,7 @@ static LRESULT DrawOwnerButton(const DRAWITEMSTRUCT* dis) {
 
 // ---------------------------------------------------------------- 主流程
 
-INT_PTR CALLBACK HashPageProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+INT_PTR CALLBACK LG_HashProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     auto st = reinterpret_cast<PageState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
     switch (msg) {
@@ -1612,7 +1557,7 @@ INT_PTR CALLBACK HashPageProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return FALSE;
 }
 
-UINT CALLBACK HashPageCallback(HWND, UINT msg, LPPROPSHEETPAGEW ppsp) {
+UINT CALLBACK LG_HashCallback(HWND, UINT msg, LPPROPSHEETPAGEW ppsp) {
     // 页面从未被打开时也会收到 RELEASE，上下文在此统一释放
     if (msg == PSPCB_RELEASE && ppsp)
         delete reinterpret_cast<PageContext*>(ppsp->lParam);

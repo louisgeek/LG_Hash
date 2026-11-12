@@ -10,7 +10,7 @@
 int wmain() {
     wchar_t tmp[MAX_PATH] = {};
     if (GetTempPathW(MAX_PATH, tmp) == 0) return 1;
-    const std::wstring dir = std::wstring(tmp) + L"hashpage_guard_";
+    const std::wstring dir = std::wstring(tmp) + L"lg_hash_guard_";
     CreateDirectoryW(dir.c_str(), nullptr);
 
     const std::wstring f1 = dir + L"\\data.txt";

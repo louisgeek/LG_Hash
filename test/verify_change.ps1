@@ -18,7 +18,7 @@ Add-Type -AssemblyName System.Windows.Forms
 . (Join-Path $PSScriptRoot 'hashlib.ps1')
 
 # 在临时目录里造一份副本，算完即弃
-$work = Join-Path $env:TEMP ("hashpage_change_" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+$work = Join-Path $env:TEMP ("lg_hash_change_" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 $target = Join-Path $work (Split-Path $File -Leaf)
 Copy-Item -LiteralPath $File -Destination $target -Force
@@ -32,7 +32,7 @@ try {
 
     $win = [HashTest]::FindProps($leaf)
     if ($win -eq [IntPtr]::Zero) { throw 'properties window not found' }
-    if ([HashTest]::SelectHashPage($win) -lt 0) { throw 'hash page not found' }
+    if ([HashTest]::SelectLG_Hash($win) -lt 0) { throw 'hash page not found' }
     $ch = [HashTest]::Children($win)
     "WARN-BEFORE: $([HashTest]::Visible($ch[1012]))"
 

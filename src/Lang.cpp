@@ -49,7 +49,7 @@ static const Entry kTable[] = {
     // 带单位的数值：%.1f <unit> (%llu bytes)
     { Lang::Id::SizeWithUnit,   L"%.1f %s (%llu 字节)", L"%.1f %s (%llu bytes)" },
 
-    { Lang::Id::FilterSums,     L"哈希文件 (*.sums)", L"Hash files (*.sums)" },
+    { Lang::Id::FilterSums,     L"哈希文件 (*.SUMS.txt)", L"Hash files (*.SUMS.txt)" },
     { Lang::Id::FilterAll,      L"所有文件 (*.*)",    L"All files (*.*)" },
 
     { Lang::Id::SourceIsTarget, L"不能覆盖正在计算的文件，请换一个文件名。",
@@ -73,30 +73,13 @@ static const Entry kTable[] = {
     { Lang::Id::AlgoSHA512,      L"SHA-512",            L"SHA-512" },
     { Lang::Id::NoAlgoSelected,  L"请至少勾选一个算法", L"Select at least one algorithm" },
 
-    // 独立设置对话框（1.4）：标题/分组/确定取消；卸载与「大写显示」文案
+    // 独立设置对话框（1.4）：标题/分组/确定取消；「大写显示」文案
     { Lang::Id::SettingsTitle,   L"设置",               L"Settings" },
     { Lang::Id::AlgoGroup,       L"算法",               L"Algorithms" },
     { Lang::Id::DisplayGroup,    L"显示",               L"Display" },
     { Lang::Id::DlgOk,           L"确定",               L"OK" },
     { Lang::Id::DlgCancel,       L"取消",               L"Cancel" },
     { Lang::Id::MenuUppercase,   L"大写显示",           L"Uppercase" },
-    { Lang::Id::MenuUninstall,   L"卸载…",              L"Uninstall…" },
-    { Lang::Id::UninstallConfirm,
-        L"确定要卸载文件哈希属性页吗？\n\n"
-        L"卸载会移除属性页并删除安装目录中的文件。\n"
-        L"当前打开的属性窗口将立即关闭。",
-        L"Uninstall the file hash property page?\n\n"
-        L"This removes the property page and deletes installed files.\n"
-        L"Open property windows will close immediately." },
-    { Lang::Id::UninstallFailed, L"无法启动卸载程序，可从系统设置卸载。", L"Cannot start the uninstaller; use system Settings." },
-    { Lang::Id::UninstallMissing, L"未找到已安装的版本（开发模式注册）。", L"No installed version found (developer registration)." },
-
-    // 独立设置对话框（1.4）
-    { Lang::Id::SettingsTitle,   L"设置",               L"Settings" },
-    { Lang::Id::AlgoGroup,       L"算法",               L"Algorithms" },
-    { Lang::Id::DisplayGroup,    L"显示",               L"Display" },
-    { Lang::Id::DlgOk,           L"确定",               L"OK" },
-    { Lang::Id::DlgCancel,       L"取消",               L"Cancel" },
 
     // 交互反馈（1.4 UI 优化）
     { Lang::Id::VerifyCue,       L"粘贴哈希值进行校验…", L"Paste a hash to verify…" },
@@ -122,9 +105,9 @@ static const Entry kTable[] = {
 void Lang::Init() {
     LANGID langid = 0;
 
-    // Software\HashPage\LangId 可写入 LCID 或 LANGID，两者低 16 位含义一致
+    // Software\LG_Hash\LangId 可写入 LCID 或 LANGID，两者低 16 位含义一致
     HKEY h = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\HashPage", 0, KEY_READ, &h) == ERROR_SUCCESS) {
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\LG_Hash", 0, KEY_READ, &h) == ERROR_SUCCESS) {
         DWORD value = 0, sz = sizeof(value);
         if (RegQueryValueExW(h, L"LangId", 0, nullptr, reinterpret_cast<LPBYTE>(&value), &sz) == ERROR_SUCCESS)
             langid = LANGIDFROMLCID(static_cast<LCID>(value));

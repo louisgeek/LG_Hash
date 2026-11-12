@@ -1,5 +1,5 @@
 #include "HashExt.h"
-#include "HashPage.h"
+#include "LG_Hash.h"
 #include "HashEngine.h"   // LongPath
 #include "Lang.h"
 #include "resource.h"
@@ -117,10 +117,10 @@ HRESULT CHashExt::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam) {
     psp.dwSize = sizeof(psp);
     psp.dwFlags = PSP_USETITLE | PSP_USECALLBACK | PSP_USEREFPARENT;
     psp.hInstance = g_hModule;
-    psp.pszTemplate = MAKEINTRESOURCEW(IDD_HASHPAGE);
+    psp.pszTemplate = MAKEINTRESOURCEW(IDD_LG_HASH);
     psp.pszTitle = Lang::Get(Lang::Id::PageTitle);
-    psp.pfnDlgProc = HashPageProc;
-    psp.pfnCallback = HashPageCallback;
+    psp.pfnDlgProc = LG_HashProc;
+    psp.pfnCallback = LG_HashCallback;
     psp.lParam = reinterpret_cast<LPARAM>(ctx);
     // 属性表管理器负责加减 DLL 引用计数，页面未打开也不会提前卸载
     psp.pcRefParent = reinterpret_cast<UINT*>(&g_locks);

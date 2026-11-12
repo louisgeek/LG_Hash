@@ -6,8 +6,8 @@
 #   算法勾选、大写显示都在「设置」按钮打开的模态对话框里操作；
 #   取消勾选的算法行直接从列表移除（其余行上移），重勾后行回到原位。
 #   这里通过 PostMessage(WM_COMMAND) 打开对话框，再在对话框里改勾选并点
-#   「确定」，验证属性页即时重渲染、设置持久化、「取消」不写回、卸载按钮弹确认框。
-# 依赖 verify_tab 的前置条件：build\HashPage.dll 已注册到当前用户。
+#   「确定」，验证属性页即时重渲染、设置持久化、「取消」不写回、版本链接显示 LG_Hash。
+# 依赖 verify_tab 的前置条件：build\LG_Hash.dll 已注册到当前用户。
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 if (-not $File) { $File = Join-Path $PSScriptRoot 'sample.txt' }
@@ -18,8 +18,8 @@ Add-Type -AssemblyName System.Windows.Forms
 . (Join-Path $PSScriptRoot 'hashlib.ps1')
 
 # 清掉旧设置，保证从“全选 + 小写”的默认状态开始
-New-Item -Path 'HKCU:\Software\HashPage' -Force | Out-Null
-Remove-ItemProperty -Path 'HKCU:\Software\HashPage' -Name 'Algos','Upper' -ErrorAction SilentlyContinue
+New-Item -Path 'HKCU:\Software\LG_Hash' -Force | Out-Null
+Remove-ItemProperty -Path 'HKCU:\Software\LG_Hash' -Name 'Algos','Upper' -ErrorAction SilentlyContinue
 
 $leaf = Split-Path $File -Leaf
 $shell = New-Object -ComObject Shell.Application
@@ -28,7 +28,7 @@ Start-Sleep -Milliseconds 1500
 
 $win = [HashTest]::FindProps($leaf)
 if ($win -eq [IntPtr]::Zero) { throw 'properties window not found' }
-if ([HashTest]::SelectHashPage($win) -lt 0) { throw 'hash page not found' }
+if ([HashTest]::SelectLG_Hash($win) -lt 0) { throw 'hash page not found' }
 
 # 等自动计算完成（CopyAll 启用为信号）
 $ch = @{}
@@ -128,35 +128,17 @@ if ($md5AfterCancel -cne $md5Lower) { throw 'cancel should discard changes' }
 "PASS cancel discards changes"
 
 # 6) 设置已持久化到注册表（Algos 全选 = 31，Upper 未勾 = 0/缺省）
-$algos = (Get-ItemProperty -Path 'HKCU:\Software\HashPage').Algos
+$algos = (Get-ItemProperty -Path 'HKCU:\Software\LG_Hash').Algos
 "REGISTRY Algos: $algos (expect 0x1F = 31, all selected)"
 if ($algos -ne 31) { throw "Algos registry value wrong: $algos" }
 "PASS settings persisted"
 
-# 7) 设置对话框里的「卸载…」按钮（IDC_SET_UNINSTALL=1109）：
-#    已安装环境弹确认框，开发模式弹「未找到已安装的版本」。
-#    对话框标题是「哈希」/「Hash」，出现后关闭即可（不真卸载）。
+# 7) 设置对话框左下角的版本链接（IDC_SET_LINK=1108）
 $dlg = Open-SettingsDialog $win
 $dc = [HashTest]::Children($dlg)
-if (-not $dc.ContainsKey(1109)) { throw 'uninstall button missing in settings dialog' }
 if (-not $dc.ContainsKey(1108)) { throw 'version link missing in settings dialog' }
-"SETTINGS-DIALOG-TAIL: link=[$([HashTest]::GetText($dc[1108]))] uninstall=[$([HashTest]::GetText($dc[1109]))]"
-[HashTest]::SendCommand($dlg, 1109)
-Start-Sleep -Milliseconds 800
-$msg = [IntPtr]::Zero
-for ($i = 0; $i -lt 20; $i++) {
-    $msg = [HashTest]::FindProps('Hash')
-    if ($msg -eq [IntPtr]::Zero) { $msg = [HashTest]::FindProps([char]0x54C8 + [char]0x5E0C) }
-    if ($msg -ne [IntPtr]::Zero) { break }
-    Start-Sleep -Milliseconds 200
-}
-if ($msg -eq [IntPtr]::Zero) {
-    'UNINSTALL-BUTTON: dialog not found - skip'
-} else {
-    "UNINSTALL-BUTTON: dialog appeared"
-    [HashTest]::Close($msg)
-    "PASS uninstall button shows confirm/notice dialog"
-}
+if ($dc.ContainsKey(1109)) { throw 'uninstall button should be removed from settings dialog' }
+"SETTINGS-DIALOG-TAIL: link=[$([HashTest]::GetText($dc[1108]))]"
 # 关闭设置对话框（取消）
 [HashTest]::SendCommand($dlg, 2)
 Start-Sleep -Milliseconds 400
@@ -166,6 +148,6 @@ Start-Sleep -Milliseconds 400
 [HashTest]::Close($win)
 
 # 恢复默认设置，避免影响其他测试
-Remove-ItemProperty -Path 'HKCU:\Software\HashPage' -Name 'Algos','Upper' -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path 'HKCU:\Software\LG_Hash' -Name 'Algos','Upper' -ErrorAction SilentlyContinue
 
 "SETTINGS: PASS"

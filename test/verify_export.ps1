@@ -4,7 +4,7 @@
 )
 $ErrorActionPreference = 'Stop'
 if (-not $File) { $File = Join-Path $PSScriptRoot 'sample.txt' }
-if (-not $Out) { $Out = Join-Path $env:TEMP 'hashpage_export_test.sums' }
+if (-not $Out) { $Out = Join-Path $env:TEMP 'lg_hash_export_test.SUMS.txt' }
 
 Add-Type -AssemblyName System.Windows.Forms
 . (Join-Path $PSScriptRoot 'hashlib.ps1')
@@ -19,7 +19,7 @@ Start-Sleep -Milliseconds 1500
 
 $win = [HashTest]::FindProps($leaf)
 if ($win -eq [IntPtr]::Zero) { throw 'properties window not found' }
-if ([HashTest]::SelectHashPage($win) -lt 0) { throw 'hash page not found' }
+if ([HashTest]::SelectLG_Hash($win) -lt 0) { throw 'hash page not found' }
 
 # 切到「哈希」页即自动计算，等完成后再导出（IDC_EXPORT = 1010）
 $ch = [HashTest]::Children($win)
@@ -39,7 +39,7 @@ if (-not $autoOk) { throw 'hash page did not auto-compute' }
 $save = [IntPtr]::Zero
 for ($i = 0; $i -lt 40 -and $save -eq [IntPtr]::Zero; $i++) {
     Start-Sleep -Milliseconds 250
-    $save = [HashTest]::FindSaveDialog('sample.txt.sums')
+    $save = [HashTest]::FindSaveDialog('sample.txt.SUMS.txt')
 }
 if ($save -eq [IntPtr]::Zero) {
     [HashTest]::Close($win)

@@ -4,7 +4,7 @@ rem
 rem   package.bat                 x64 only
 rem   package.bat x64 arm64       both
 rem
-rem Steps: build.bat -> sign.bat -> dist\HashPage-<arch>.exe + SHA256SUMS.txt
+rem Steps: build.bat -> sign.bat -> dist\LG_Hash-<arch>.exe + SHA256SUMS.txt
 rem Refuses to package an unsigned binary.
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
@@ -27,35 +27,35 @@ mkdir "%DIST%"
 for %%a in (%ARCHES%) do (
     if /i "%%a"=="x64" (
         set "SRC=build"
-        set "NAME=HashPage-x64"
+        set "NAME=LG_Hash-x64"
     ) else (
         set "SRC=build\%%a"
-        set "NAME=HashPage-%%a"
+        set "NAME=LG_Hash-%%a"
     )
-    if not exist "!SRC!\HashPage.exe" (
-        echo [package] missing !SRC!\HashPage.exe - run build.bat %%a first
+    if not exist "!SRC!\LG_Hash.exe" (
+        echo [package] missing !SRC!\LG_Hash.exe - run build.bat %%a first
         exit /b 1
     )
 
-    rem 未签名的二进制不应进入发布包
+    rem unsigned binaries must never reach a release package
     if defined SIGNTOOL (
-        "!SIGNTOOL!" verify /pa "!SRC!\HashPage.exe" >nul 2>&1
+        "!SIGNTOOL!" verify /pa "!SRC!\LG_Hash.exe" >nul 2>&1
         if errorlevel 1 (
-            echo [package] !SRC!\HashPage.exe is not signed - run sign.bat first
+            echo [package] !SRC!\LG_Hash.exe is not signed - run sign.bat first
             exit /b 1
         )
     ) else (
         echo [package] warning: signtool not found, cannot verify signature
     )
 
-    copy /y "!SRC!\HashPage.exe" "%DIST%\!NAME!.exe" >nul
+    copy /y "!SRC!\LG_Hash.exe" "%DIST%\!NAME!.exe" >nul
     if errorlevel 1 exit /b 1
     echo [package] %DIST%\!NAME!.exe
 )
 
 copy /y README.md "%DIST%\README.md" >nul
 
-rem 附带校验和，便于分发后核对
+rem include checksums for post-distribution verification
 powershell -NoProfile -Command ^
   "Get-ChildItem '%DIST%\*.exe' | ForEach-Object { $h=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(); '{0}  {1}' -f $h, $_.Name } | Set-Content -Encoding ASCII '%DIST%\SHA256SUMS.txt'"
 

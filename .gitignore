@@ -11,13 +11,12 @@ dist/
 # Test leftovers
 edge_*.bin
 change_probe.bin
-*.sums
+*.SUMS.txt
 *.png
 
 # Test fixtures (regenerable via test/make_fixtures.ps1)
 large.bin
 large_chg.bin
-hashpage_sample.dat
 
 # Session tooling
 .box-agent/
