@@ -1,0 +1,79 @@
+#include <windows.h>
+#include <commctrl.h>
+#include "resource.h"
+
+#pragma code_page(65001)
+
+IDD_HASHPAGE DIALOGEX 0, 0, 302, 218
+STYLE DS_SETFONT | DS_CONTROL | WS_CHILD
+FONT 9, "Microsoft YaHei UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "", IDC_FILEINFO, 7, 7, 190, 10, SS_ENDELLIPSIS
+    PUSHBUTTON      "◀", IDC_PREV, 202, 4, 20, 15
+    PUSHBUTTON      "1/1 ▾", IDC_FILESEL, 224, 4, 47, 15
+    PUSHBUTTON      "▶", IDC_NEXT, 273, 4, 20, 15
+    CONTROL         "", IDC_HASHLIST, WC_LISTVIEW,
+                    LVS_REPORT | LVS_SHOWSELALWAYS | LVS_SINGLESEL | WS_TABSTOP,
+                    7, 20, 288, 82, WS_EX_CLIENTEDGE
+    CONTROL         "", IDC_PROGRESS, "msctls_progress32", 0, 7, 105, 288, 8
+    LTEXT           "", IDC_STATUS, 7, 116, 288, 10
+    LTEXT           "", IDC_CHANGEWARN, 7, 127, 288, 20, SS_ENDELLIPSIS
+    GROUPBOX        "校验", IDC_VERIFYGROUP, 7, 150, 288, 40
+    EDITTEXT        IDC_VERIFY, 14, 162, 274, 14, ES_AUTOHSCROLL
+    LTEXT           "", IDC_MATCHRESULT, 14, 178, 274, 10
+    PUSHBUTTON      "复制选中", IDC_COPYSEL, 7, 196, 60, 14, WS_DISABLED
+    PUSHBUTTON      "复制全部", IDC_COPYALL, 72, 196, 60, 14, WS_DISABLED
+    PUSHBUTTON      "导出", IDC_EXPORT, 137, 196, 50, 14, WS_DISABLED
+    PUSHBUTTON      "计算", IDC_REHASH, 192, 196, 50, 14
+    PUSHBUTTON      "设置", IDC_SETTINGS_BTN, 247, 196, 42, 14
+END
+
+// 独立设置对话框（参考 HashCheck 形态：分组框 + 底部确定/取消 + 左下角项目链接）
+IDD_SETTINGS DIALOGEX 0, 0, 240, 140
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "设置"
+FONT 9, "Microsoft YaHei UI", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "算法", IDC_SET_ALGOGROUP, 7, 7, 226, 50
+    AUTOCHECKBOX    "CRC32",   IDC_SET_CRC32,  14, 20, 60, 12
+    AUTOCHECKBOX    "MD5",     IDC_SET_MD5,    82, 20, 60, 12
+    AUTOCHECKBOX    "SHA-1",   IDC_SET_SHA1,   150, 20, 66, 12
+    AUTOCHECKBOX    "SHA-256", IDC_SET_SHA256, 14, 36, 60, 12
+    AUTOCHECKBOX    "SHA-512", IDC_SET_SHA512, 82, 36, 80, 12
+    GROUPBOX        "显示", IDC_SET_DISPGROUP, 7, 60, 226, 26
+    AUTOCHECKBOX    "大写显示", IDC_SET_UPPER, 14, 70, 100, 12
+    LTEXT           "HashPage", IDC_SET_LINK, 7, 118, 80, 10, SS_NOTIFY
+    PUSHBUTTON      "卸载…", IDC_SET_UNINSTALL, 90, 116, 44, 14
+    DEFPUSHBUTTON   "确定", IDOK, 136, 116, 46, 14
+    PUSHBUTTON      "取消", IDCANCEL, 187, 116, 46, 14
+END
+
+// DLL 使用清单资源 ID 2（ISOLATIONAWARE_MANIFEST_RESOURCE_ID）
+2 RT_MANIFEST "HashPage.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    1,3,0,0
+ PRODUCTVERSION 1,3,0,0
+ FILEFLAGSMASK  0x3fL
+ FILEFLAGS      0x0L
+ FILEOS         0x40004L
+ FILETYPE       0x2L
+ FILESUBTYPE    0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "FileDescription",  "文件哈希属性页扩展"
+            VALUE "FileVersion",      "1.3.0.0"
+            VALUE "InternalName",     "HashPage.dll"
+            VALUE "OriginalFilename", "HashPage.dll"
+            VALUE "ProductName",      "HashPage"
+            VALUE "ProductVersion",   "1.3.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END

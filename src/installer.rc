@@ -1,0 +1,46 @@
+#include <windows.h>
+#include <commctrl.h>
+
+#pragma code_page(65001)
+
+// 必须在这里定义：installer.cpp 里的 #define 只对该编译单元有效，
+// 资源编译器看不到，RCDATA 会被静默丢弃，安装器就提取不出 DLL。
+#define IDR_HASHPAGE_DLL 101
+
+// 内嵌的 DLL 路径由 build.bat 通过 /d 传入，避免 ARM64 安装器误打包 x64 的 DLL。
+// rc 的 /d 值不带空格时无需引号。
+#ifndef HASHPAGE_DLL_PATH
+#define HASHPAGE_DLL_PATH build\HashPage.dll
+#endif
+
+IDR_HASHPAGE_DLL RCDATA HASHPAGE_DLL_PATH
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    1,3,0,0
+ PRODUCTVERSION 1,3,0,0
+ FILEFLAGSMASK  0x3fL
+ FILEFLAGS      0x0L
+ FILEOS         0x40004L
+ FILETYPE       0x1L
+ FILESUBTYPE    0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "FileDescription",  "HashPage 安装程序"
+            VALUE "FileVersion",      "1.3.0.0"
+            VALUE "InternalName",     "HashPage-Installer"
+            VALUE "OriginalFilename", "HashPage.exe"
+            VALUE "ProductName",      "HashPage"
+            VALUE "ProductVersion",   "1.3.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END
+
+// EXE 的进程清单资源 ID 必须是 1
+1 RT_MANIFEST "Installer.manifest"

@@ -1,0 +1,35 @@
+# Build outputs
+build/
+dist/
+*.obj
+*.exp
+*.lib
+*.res
+*.dll
+*.exe
+
+# Test leftovers
+edge_*.bin
+change_probe.bin
+*.sums
+*.png
+
+# Test fixtures (regenerable via test/make_fixtures.ps1)
+large.bin
+large_chg.bin
+hashpage_sample.dat
+
+# Session tooling
+.box-agent/
+.box-agent-scratch/
+.opencode/
+
+# Temp
+*.log
+*_log.txt
+~$*
+
+# IDE
+.vs/
+*.user
+*.suo

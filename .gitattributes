@@ -1,0 +1,19 @@
+# 默认：按文本处理，行尾在 Windows 上统一为 CRLF
+* text=auto
+
+# 批处理与 PowerShell 必须 CRLF（cmd/ps 5.1 的解析对 LF 不稳健）
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# shell 脚本与 Python：保持 LF，跨平台可看
+*.sh text eol=lf
+*.py text eol=lf
+
+# 生成的参考文件：行尾不固定，忽略行尾差异以避免每次运行后产生噪音
+test/reference.txt -text
+
+# 二进制：绝不转换
+*.bin -text
+*.png binary
+*.dll binary
+*.exe binary
