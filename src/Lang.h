@@ -36,4 +36,11 @@ namespace Lang {
     void Init();
     const wchar_t* Get(Id id);
     bool IsChinese();
+
+    // 重新读取语言设置。与 Theme::Refresh() 对称：在属性页/设置对话框创建时调用，
+    // 使「改完设置，下次打开属性页」即可生效，不必重启 explorer.exe。
+    //
+    // 内部按注册表原始值做比较，值没变时直接返回——Get() 热路径仍然不碰注册表，
+    // 每次打开属性页只多一次轻量读，不会影响列表渲染性能。
+    void Refresh();
 }

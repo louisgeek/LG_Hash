@@ -12,6 +12,10 @@
 static std::atomic<bool> g_chinese{true};
 static std::atomic<bool> g_initialized{false};
 
+// 上次读取到的原始 LangId 值（0 表示未设置，走系统默认）。Refresh() 用它判断
+// 设置是否真的变了，避免每次打开属性页都无谓地重算。
+static std::atomic<DWORD> g_rawLangId{0};
+
 struct Entry { Lang::Id id; const wchar_t* zh; const wchar_t* en; };
 static const Entry kTable[] = {
     { Lang::Id::PageTitle,      L"哈希",         L"Hash" },
@@ -102,21 +106,45 @@ static const Entry kTable[] = {
     { Lang::Id::NextFile,       L"▶",                  L"▶" },
 };
 
-void Lang::Init() {
-    LANGID langid = 0;
-
-    // Software\LG_Hash\LangId 可写入 LCID 或 LANGID，两者低 16 位含义一致
+// 只读原始配置值：LangId 可写 LCID 或 LANGID（低 16 位含义一致）。
+// 返回 0 表示未配置，应回退到系统默认 UI 语言。
+static DWORD ReadRawLangId() {
     HKEY h = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\LG_Hash", 0, KEY_READ, &h) == ERROR_SUCCESS) {
-        DWORD value = 0, sz = sizeof(value);
-        if (RegQueryValueExW(h, L"LangId", 0, nullptr, reinterpret_cast<LPBYTE>(&value), &sz) == ERROR_SUCCESS)
-            langid = LANGIDFROMLCID(static_cast<LCID>(value));
-        RegCloseKey(h);
-    }
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\LG_Hash", 0, KEY_READ, &h) != ERROR_SUCCESS)
+        return 0;
+    DWORD value = 0, sz = sizeof(value);
+    const bool ok = RegQueryValueExW(h, L"LangId", 0, nullptr,
+                                     reinterpret_cast<LPBYTE>(&value), &sz) == ERROR_SUCCESS;
+    RegCloseKey(h);
+    return ok ? value : 0;
+}
+
+// 把原始配置值应用到进程级状态。raw 为 0 时回退到系统默认语言。
+static void ApplyRawLangId(DWORD raw) {
+    LANGID langid = raw ? LANGIDFROMLCID(static_cast<LCID>(raw)) : 0;
     if (langid == 0) langid = GetSystemDefaultUILanguage();
 
     g_chinese.store(PRIMARYLANGID(langid) == LANG_CHINESE, std::memory_order_relaxed);
+    g_rawLangId.store(raw, std::memory_order_relaxed);
     g_initialized.store(true, std::memory_order_release);
+}
+
+void Lang::Init() {
+    ApplyRawLangId(ReadRawLangId());
+}
+
+// 与 Theme::Refresh() 对称：属性页 / 设置对话框创建时调用，让语言改动
+// 「下次打开属性页」即生效，不必重启 explorer.exe。
+//
+// 只在配置值真的变化时切换；没变时开销仅一次注册表读，Get() 热路径不受影响
+// （Get 仍然只读原子变量，不碰注册表）。
+void Lang::Refresh() {
+    const DWORD raw = ReadRawLangId();
+    if (g_initialized.load(std::memory_order_acquire) &&
+        raw == g_rawLangId.load(std::memory_order_relaxed)) {
+        return;   // 未变化
+    }
+    ApplyRawLangId(raw);
 }
 
 // 首次取字符串时才读语言设置：避免在 DllMain 的加载器锁内访问注册表

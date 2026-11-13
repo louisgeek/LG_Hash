@@ -1,6 +1,6 @@
 # AGENTS.md
 
-给在本仓库工作的 AI 代理／新协作者的简要说明。面向用户的文档见 `README.md`。
+给在本仓库工作的 AI 代理／新协作者的简要说明。面向用户的文档见 `README.md`，构建与打包流程见 `BUILDING.md`。
 
 ## 这是什么
 
@@ -16,20 +16,23 @@ C++17，Win32 裸 API，无第三方依赖。构建依赖：Visual Studio（C++ 
 - UI 线程不读文件：计算在后台线程（`PSN_SETACTIVE` 时自动启动）。
 - 不调用 uxtheme 未公开序号导出；深色模式靠读注册表判断 + 自己画。
 - 所有面向用户的文案必须走 `Lang::Get()`（`verify_english.ps1` 会断言英文模式无中文）。
+- 需要读注册表的配置（语言 / 主题）只在 `Lang::Refresh()` / `Theme::Refresh()` 里读，两者都在建页时调用；不要把注册表读取塞进 `Lang::Get()` 这类热路径。
 
 ## 常用命令
 
 ```bash
-build.bat                  # x64 构建（默认）
-build.bat x64 arm64        # 双架构
+build.bat                  # x64 构建（默认），build.bat x64 arm64 双架构
 test\run_tests.bat         # 控制台测试（全量）
 sign.bat                   # 自签名开发证书签名
 package.bat                # 签名校验 + 打包到 dist\
 ```
 
+完整流程、环境要求与故障排查见 `BUILDING.md`。
+
 UI 测试需要交互式桌面会话（会真的打开属性窗口）：
 `test\verify_tab.ps1`、`verify_settings.ps1`、`verify_export.ps1`、`verify_change.ps1`、
-`verify_lifecycle.ps1`、`verify_upgrade.ps1`、`verify_english.ps1`、`verify_export_guard.ps1`。
+`verify_lifecycle.ps1`、`verify_upgrade.ps1`、`verify_english.ps1`、`verify_export_guard.ps1`、
+`verify_language_switch.ps1`（改 LangId 后重开属性页应换语言，断言无需重启 explorer）。
 
 ## 踩过的坑（改代码前必读）
 
@@ -43,6 +46,11 @@ UI 测试需要交互式桌面会话（会真的打开属性窗口）：
 8. **`CleanStaleDlls` 绝不能调 `regsvr32 /u`**：所有版本共用同一 CLSID，反注册旧版会抹掉新版注册，属性页直接消失。`verify_upgrade.ps1` 断言此点。
 9. **设置对话框资源必须用 `g_hModule` 加载**：宿主是 explorer，`GetModuleHandle(nullptr)` 取不到 DLL 里的资源。
 10. **校验框占位提示不用 `EM_SETCUEBANNER`**：部分系统构建上该消息返回 0（实测），用「空态提示文字 + 灰色配色」等价实现，见 `SetVerifyCue`。占位标志必须先置再改文本，否则占位会被当输入校验。
+11. **版本号只有一个来源：`src\version.h`**。改版本只改那里四个数字，`.rc` 通过 `build\version_gen.h`（`tools\gen-version-header.ps1` 生成）取逗号/字符串形式，`.cpp` 用 `LG_HASH_VERSION_SHORT`。`build.bat` 编译前会生成该头并跑 `tools\check-version.ps1`，任何写回硬编码数字的改动都会让构建失败。
+    - **`v` 前缀只放在展示位置**（设置对话框文案、git tag、发布页）。不要加到 `.rc` 的 `FILEVERSION`（4 个 16 位整数，加字符编译失败）、`ProductVersion`、卸载项的 `DisplayVersion`——这些会被升级检测和第三方版本解析器按纯数字处理。
+    - 分发包名带版本号：`dist\LG_Hash-<x.y.z>-x64.exe`，版本号从 `build\version_gen.h` 读，`package.bat` 自动拼。
+    - **为什么 rc 要单独生成头**：`rc.exe` 不支持 `#` 字符串化运算符，`#define STR(x) #x` 会报 `RC2104`。所以 `"0.0.3.0"` 必须由脚本落成字面量，不能由 rc 自己从数字推导。
+    - 新增/重命名版本常量时，同步更新 `tools\check-version.ps1` 的检查规则，不要为了让构建通过而删掉校验。
 
 ## 代码结构
 
@@ -50,7 +58,10 @@ UI 测试需要交互式桌面会话（会真的打开属性窗口）：
 src/
   dllmain.cpp      DllMain、IClassFactory、注册 / 反注册
   HashExt.cpp      IShellExtInit（收集选中文件，上限 64）+ IShellPropSheetExt（加页）
-  LG_Hash.cpp     属性页 UI：渲染、校验、导出、设置对话框、深色自绘
+  LG_Hash.cpp      属性页主流程：窗口消息分发、计算任务编排、校验、完成汇总
+  LG_HashDlg.cpp   设置对话框（读写 HKCU）+ 导出（IFileSaveDialog、防覆盖、落盘）
+  LG_HashDraw.cpp  列表渲染与全部自绘：列头、按钮、菜单、占位提示、语言套用
+  LG_HashInternal.h 上面三个 UI 文件共用的内部声明（PageState / MenuEntry / 导出函数）
   HashJob.cpp/.h   Job 生命周期 + 工作者线程（多文件串行计算）
   HashEngine.cpp   CNG 多算法单遍流式计算 + CRC32 + 变更检测（纯计算，无 UI）
   Lang.cpp/.h      中英文文案表
@@ -60,6 +71,9 @@ src/
 ```
 
 `HashEngine` 与 `HashJob` 不依赖 UI，可被测试程序直接链接（`test/hashtest*.cpp`、`jobtest.cpp`）。
+`LG_Hash*.cpp` 三个文件只通过 `LG_HashInternal.h` 互相调用，不直接引用彼此的实现细节；
+只在单个文件内使用的辅助函数保持 `static`，不进头文件。新增跨文件函数时，声明加到
+`LG_HashInternal.h` 并去掉定义处的 `static`——漏改会得到 LNK2019，改错会得到 C2011 重定义。
 测试临时文件一律写 `%TEMP%`，不在仓库根目录留残留；`test/large.bin` 与 `reference.txt` 用脚本重建，不要手工编辑。
 
 ## 关键设计
@@ -80,7 +94,7 @@ src/
 
 ## 已知限制
 
-- x64 已完整验证；ARM64 构建路径未在本机验证（缺 MSVC ARM64 组件）。
+- **只发布 x64**。ARM64 构建路径保留在脚本里，但本机缺 MSVC ARM64 组件、从未产出过 ARM64 包，也未做真机验证。ARM64 设备占有率低，暂不纳入发布范围——不要因为看到脚本支持就以为可以直接发。
 - 自签名证书仅限本机开发，公开分发需 CA 证书。
 - 变更检测在非 NTFS 卷降级为大小 + 时间，不适合对抗性场景。
-- 语言与主题每个宿主进程只读一次，改配置需重启 `explorer.exe`。
+- 配置（算法 / 大写 / 语言 / 主题）在**每次建页时**重读，改完下次打开属性页即生效，不需重启 `explorer.exe`。`Lang::Get()` 仍是纯原子读、不碰注册表，重读只发生在 `Lang::Refresh()` / `Theme::Refresh()`。

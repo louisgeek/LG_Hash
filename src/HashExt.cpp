@@ -113,6 +113,10 @@ HRESULT CHashExt::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam) {
     auto ctx = new (std::nothrow) PageContext{ m_paths, nullptr };
     if (!ctx) return E_OUTOFMEMORY;
 
+    // 每次建页前刷新语言：标签文字（pszTitle）在这里一次性定下，
+    // 若不在此处刷新，改了 LangId 后标签仍会显示旧语言，直到重启 explorer。
+    Lang::Refresh();
+
     PROPSHEETPAGEW psp{};
     psp.dwSize = sizeof(psp);
     psp.dwFlags = PSP_USETITLE | PSP_USECALLBACK | PSP_USEREFPARENT;

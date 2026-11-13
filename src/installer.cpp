@@ -8,10 +8,13 @@
 #include <string>
 #include <vector>
 
+#include "version.h"
+
 #define IDR_LG_HASH_DLL   101
 #define kUninstallKey      L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\LG_Hash"
 #define kProductName       L"LG_Hash"
-#define kVersion           L"1.3.0"
+// 版本号唯一来源：src\version.h。卸载项「应用和功能」显示的就是它。
+#define kVersion           LG_HASH_VERSION_SHORT
 
 // 安装目录：%LOCALAPPDATA%\LG_Hash
 static std::wstring GetInstallDir() {

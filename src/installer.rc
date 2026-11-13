@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <commctrl.h>
+#include "version_gen.h"   // 自动生成：tools\gen-version-header.ps1
 
 #pragma code_page(65001)
 
@@ -16,8 +17,8 @@
 IDR_LG_HASH_DLL RCDATA LG_HASH_DLL_PATH
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION    1,3,0,0
- PRODUCTVERSION 1,3,0,0
+ FILEVERSION    LG_HASH_VERSION_COMMA
+ PRODUCTVERSION LG_HASH_VERSION_COMMA
  FILEFLAGSMASK  0x3fL
  FILEFLAGS      0x0L
  FILEOS         0x40004L
@@ -29,11 +30,11 @@ BEGIN
         BLOCK "080404b0"
         BEGIN
             VALUE "FileDescription",  "LG_Hash 安装程序"
-            VALUE "FileVersion",      "1.3.0.0"
+            VALUE "FileVersion",      LG_HASH_VERSION_STRING
             VALUE "InternalName",     "LG_Hash-Installer"
             VALUE "OriginalFilename", "LG_Hash.exe"
             VALUE "ProductName",      "LG_Hash"
-            VALUE "ProductVersion",   "1.3.0.0"
+            VALUE "ProductVersion",   LG_HASH_VERSION_STRING
         END
     END
     BLOCK "VarFileInfo"

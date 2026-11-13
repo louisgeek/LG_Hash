@@ -1,64 +1,25 @@
-#include "LG_Hash.h"
-#include "HashJob.h"
-#include "HashEngine.h"
-#include "HashExt.h"   // g_hModule：对话框资源在 DLL 里，不能用宿主进程的模块句柄
-#include "Lang.h"
-#include "Theme.h"
-#include "PathUtil.h"
-#include "resource.h"
+
+// 属性页主流程：窗口消息分发、计算任务编排、校验、完成汇总。
+// 设置对话框与导出见 LG_HashDlg.cpp，自绘与菜单见 LG_HashDraw.cpp。
+
+#include "LG_HashInternal.h"
 
 #include <windows.h>
 #include <commctrl.h>
 #include <shlwapi.h>
-#include <shlobj.h>
-#include <windowsx.h>
 #include <cwctype>
 #include <cstdio>
 #include <string>
 #include <vector>
 
-#define TIMER_EXPORT    0x1001
-#define TIMER_CLIPBOARD 0x1002
+#include "Lang.h"
+#include "Theme.h"
+#include "resource.h"
 
-// 计算在用户真正切到「哈希」页时自动开始（见 RequestAutoCompute）：
-// 打开属性页仍停留在「常规」等标签时不会读盘，只有这一页被显示出来才启动。
-// StartJob 只重置控件并起一个后台线程，读盘不发生在 UI 线程上。
-//
-// 多选时按选中顺序串行计算，一次读一个文件；当前文件的下标在 st->cur，
-// 文件间切换通过「i/N ▾」下拉按钮（IDC_FILESEL）完成，切换只是重渲染，
-// 不重读盘。
-
-struct PageState {
-    PageContext* ctx;
-    bool done = false;           // 当前 Job 整体结束（全部文件算完 / 取消 / 出错）
-    bool running = false;
-    bool autoStarted = false;    // 自动计算只触发一次：用户取消后不再自作主张重开
-    // 最新任务的序号。消息只带 Job*，而 Job 释放后新任务可能复用同一地址
-    // （ABA 复用），单靠指针比对会把旧任务的完成消息误判成新任务的。
-    // 因此每条消息额外带上产生它的 seq，与这里比对后才处理。
-    UINT jobSeq = 0;
-    size_t cur = 0;              // 多选时的当前文件下标（单文件恒为 0）
-    int match = -1;              // -1 中性，-2 不匹配，>=0 匹配的算法下标
-    std::wstring idleStatus;     // 导出提示结束后恢复的状态栏文字
-    bool upper = false;          // 哈希值大写显示
-    bool algo[kHashCount];       // 各算法是否勾选
-    HBRUSH bgBrush = nullptr;
-    HBRUSH panelBrush = nullptr;
-    HFONT menuFont = nullptr;    // 自绘菜单项用系统菜单字体（首次打开菜单时创建）
-    HFONT listFont = nullptr;    // 列表等宽字体（十六进制哈希对齐易读）
-    HWND tip = nullptr;          // 工具提示控件
-    bool cueShown = false;       // 校验框当前显示的是占位提示（不是用户输入）
-};
-
-// 前置声明：ListView 子类化过程要用到列头自绘（定义在「外观」一节）
-static LRESULT CustomDrawHeader(LPNMCUSTOMDRAW cd);
-static void RenderCurrent(HWND hwnd, PageState* st);
-// 设置对话框（定义在「设置对话框」一节）也复用按钮自绘
-static LRESULT DrawOwnerButton(const DRAWITEMSTRUCT* dis);
 
 // ---------------------------------------------------------------- 工具函数
 
-static void SetStatus(HWND hwnd, const std::wstring& text) {
+void SetStatus(HWND hwnd, const std::wstring& text) {
     SetDlgItemTextW(hwnd, IDC_STATUS, text.c_str());
 }
 
@@ -102,7 +63,7 @@ static void ShowTransientStatus(HWND hwnd, Lang::Id id) {
 }
 
 // 「复制选中」只在列表有选中行且计算完成时可用
-static void UpdateCopySelState(HWND hwnd, PageState* st) {
+void UpdateCopySelState(HWND hwnd, PageState* st) {
     HWND list = GetDlgItem(hwnd, IDC_HASHLIST);
     const bool selected = st->done &&
                           ListView_GetNextItem(list, -1, LVNI_SELECTED) >= 0;
@@ -138,29 +99,8 @@ static void FormatSize(ULONGLONG bytes, wchar_t* out, size_t cch) {
         swprintf(out, cch, Lang::Get(Lang::Id::SizeWithUnit), v, units[u], bytes);
 }
 
-static std::string ToUtf8(const std::wstring& text) {
-    if (text.empty()) return std::string();
-    const int need = WideCharToMultiByte(CP_UTF8, 0, text.c_str(),
-                                         static_cast<int>(text.size()),
-                                         nullptr, 0, nullptr, nullptr);
-    if (need <= 0) return std::string();
-    std::string out(static_cast<size_t>(need), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()),
-                        out.data(), need, nullptr, nullptr);
-    return out;
-}
-
-// 从 Job 里抄出当前文件（下标 idx）的结果快照。调用方必须已持 job 判空；
-// 在 cs 内复制，出锁后再用，避免持锁调用 UI。
-struct ResultSnap {
-    std::wstring hex[kHashCount];
-    FileChangeInfo change;
-    bool finished = false;
-    std::wstring error;          // kCancelledResult 表示已取消
-    double elapsed = 0;
-};
-
-static void SnapCurrent(Job* job, size_t idx, ResultSnap* out) {
+// 从 Job 里抄出当前文件（下标 idx）的结果快照（定义见 LG_HashInternal.h）
+void SnapCurrent(Job* job, size_t idx, ResultSnap* out) {
     EnterCriticalSection(&job->cs);
     if (idx < job->results.size()) {
         for (int i = 0; i < kHashCount; ++i) out->hex[i] = job->results[idx].hex[i];
@@ -173,7 +113,7 @@ static void SnapCurrent(Job* job, size_t idx, ResultSnap* out) {
 }
 
 // 按 "哈希  文件名" 的格式拼出全部已勾选算法的结果（单文件路径用）。
-static std::wstring BuildAllLines(HWND hwnd, const wchar_t* fileName,
+std::wstring BuildAllLines(HWND hwnd, const wchar_t* fileName,
                                   const bool algo[kHashCount]) {
     HWND list = GetDlgItem(hwnd, IDC_HASHLIST);
     std::wstring all;
@@ -188,92 +128,6 @@ static std::wstring BuildAllLines(HWND hwnd, const wchar_t* fileName,
         all += L"\r\n";
     }
     return all;
-}
-
-// ---------------------------------------------------------------- 设置持久化
-
-// 设置存 HKCU\Software\LG_Hash：
-//   Algos  DWORD 位掩码（bit0=CRC32 … bit4=SHA-512），缺省 0x1F 全选
-//   Upper  DWORD 1=大写
-// 与 LangId 同键，读取时机与语言一致（首次使用时，不在 DllMain 里碰注册表）。
-static const wchar_t* kSettingsKey = L"Software\\LG_Hash";
-
-static void LoadSettings(PageState* st) {
-    for (int i = 0; i < kHashCount; ++i) st->algo[i] = true;
-    st->upper = false;
-
-    HKEY h = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, kSettingsKey, 0, KEY_READ, &h) != ERROR_SUCCESS)
-        return;
-    DWORD algos = 0, sz = sizeof(algos);
-    if (RegQueryValueExW(h, L"Algos", 0, nullptr, reinterpret_cast<LPBYTE>(&algos), &sz) == ERROR_SUCCESS) {
-        for (int i = 0; i < kHashCount; ++i)
-            st->algo[i] = (algos & (1u << i)) != 0;
-    }
-    DWORD upper = 0;
-    sz = sizeof(upper);
-    if (RegQueryValueExW(h, L"Upper", 0, nullptr, reinterpret_cast<LPBYTE>(&upper), &sz) == ERROR_SUCCESS)
-        st->upper = upper != 0;
-    RegCloseKey(h);
-}
-
-static void SaveSettings(const PageState* st) {
-    DWORD algos = 0;
-    for (int i = 0; i < kHashCount; ++i)
-        if (st->algo[i]) algos |= (1u << i);
-    HKEY h = nullptr;
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, kSettingsKey, 0, nullptr, 0, KEY_SET_VALUE,
-                        nullptr, &h, nullptr) != ERROR_SUCCESS)
-        return;
-    RegSetValueExW(h, L"Algos", 0, REG_DWORD,
-                  reinterpret_cast<const BYTE*>(&algos), sizeof(algos));
-    DWORD upper = st->upper ? 1u : 0u;
-    RegSetValueExW(h, L"Upper", 0, REG_DWORD,
-                  reinterpret_cast<const BYTE*>(&upper), sizeof(upper));
-    RegCloseKey(h);
-}
-
-// 大小写切换时从已存结果重渲染，不重读文件
-static std::wstring ApplyCase(const std::wstring& hex, bool upper) {
-    if (!upper) return hex;
-    std::wstring s = hex;
-    for (auto& c : s)
-        if (c >= L'a' && c <= L'f') c -= L'a' - L'A';
-    return s;
-}
-
-// 按勾选状态重建列表：未勾选的算法直接不出现在列表里（而不是显示 —）。
-// placeholder 非空时所有行的值列填占位符（初始「—」/ 计算中「…」）；
-// 为空时按完成状态填真实值（未算出的算法仍显示 —，提示重算可取回）。
-static void RebuildList(HWND hwnd, PageState* st, const wchar_t* placeholder) {
-    HWND list = GetDlgItem(hwnd, IDC_HASHLIST);
-    ListView_DeleteAllItems(list);
-
-    ResultSnap snap;
-    Job* job = st->ctx->job;
-    const bool haveJob = job && st->cur < job->paths.size();
-    if (haveJob) SnapCurrent(job, st->cur, &snap);
-
-    int row = 0;
-    for (int i = 0; i < kHashCount; ++i) {
-        if (!st->algo[i]) continue;
-        LVITEMW it{};
-        it.mask = LVIF_TEXT;
-        it.iItem = row;
-        it.pszText = const_cast<wchar_t*>(kHashAlgos[i].name);
-        ListView_InsertItem(list, &it);
-
-        std::wstring value = L"—";
-        if (placeholder) {
-            value = placeholder;
-        } else if (haveJob && snap.finished && !snap.hex[i].empty()) {
-            value = ApplyCase(snap.hex[i], st->upper);
-        }
-        ListView_SetItemText(list, row, 1, value.data());
-        ++row;
-    }
-    // 行重建后选中状态丢失，同步「复制选中」的可用性
-    UpdateCopySelState(hwnd, st);
 }
 
 // ---------------------------------------------------------------- 计算任务
@@ -342,7 +196,7 @@ static void RequestAutoCompute(HWND hwnd, PageState* st) {
 
 // ---------------------------------------------------------------- 校验
 
-static void EvaluateVerify(HWND hwnd, PageState* st) {
+void EvaluateVerify(HWND hwnd, PageState* st) {
     // 占位提示不是用户输入：空态直接按「未填写」处理，不显示任何匹配结果
     wchar_t buf[512] = {};
     if (!st->cueShown) GetDlgItemTextW(hwnd, IDC_VERIFY, buf, 512);
@@ -550,10 +404,6 @@ static void OnDone(HWND hwnd, PageState* st, Job* job) {
     }
 }
 
-static void RenderCurrent(HWND hwnd, PageState* st) {
-    RebuildList(hwnd, st, nullptr);
-}
-
 // 列头的 NM_CUSTOMDRAW 发给父窗口（即 ListView），不会到达属性页对话框，
 // 因此子类化 ListView 把它拦下来转发给 CustomDrawHeader。
 static LRESULT CALLBACK ListViewSubclassProc(HWND hwnd, UINT msg, WPARAM wParam,
@@ -569,587 +419,6 @@ static LRESULT CALLBACK ListViewSubclassProc(HWND hwnd, UINT msg, WPARAM wParam,
     }
     (void)refData;
     return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
-// ---------------------------------------------------------------- 导出
-
-// Vista+ 的 IFileSaveDialog：比 GetSaveFileNameW 更现代，且不需要 comdlg32 的
-// OPENFILENAME 结构体，长路径与自定义位置支持更好。
-static bool PickSavePath(HWND owner, const std::wstring& suggested, std::wstring* out) {
-    IFileSaveDialog* dialog = nullptr;
-    HRESULT hr = CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER,
-                                  IID_PPV_ARGS(&dialog));
-    if (FAILED(hr) || !dialog) return false;
-
-    bool ok = false;
-    const COMDLG_FILTERSPEC filters[] = {
-        { Lang::Get(Lang::Id::FilterSums), L"*.SUMS.txt" },
-        { Lang::Get(Lang::Id::FilterAll), L"*.*" },
-    };
-    dialog->SetFileTypes(2, filters);
-    dialog->SetFileTypeIndex(1);
-    dialog->SetDefaultExtension(L"SUMS.txt");
-    dialog->SetFileName(suggested.c_str());
-
-    FILEOPENDIALOGOPTIONS options = 0;
-    if (SUCCEEDED(dialog->GetOptions(&options))) {
-        dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_OVERWRITEPROMPT);
-    }
-
-    if (SUCCEEDED(dialog->Show(owner))) {
-        IShellItem* item = nullptr;
-        if (SUCCEEDED(dialog->GetResult(&item)) && item) {
-            PWSTR path = nullptr;
-            if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) && path) {
-                *out = path;
-                CoTaskMemFree(path);
-                ok = true;
-            }
-            item->Release();
-        }
-    }
-    dialog->Release();
-    return ok;
-}
-
-// 从 Job 的结果直接拼多文件导出内容（不经过列表控件，列表只显示当前文件）
-static std::wstring BuildMultiLines(Job* job, const bool algo[kHashCount]) {
-    std::wstring all;
-    for (size_t f = 0; f < job->paths.size(); ++f) {
-        if (f >= job->results.size() || !job->results[f].finished) continue;
-        const wchar_t* name = PathFindFileNameW(job->paths[f].c_str());
-        for (int i = 0; i < kHashCount; ++i) {
-            if (!algo[i] || job->results[f].hex[i].empty()) continue;
-            all += job->results[f].hex[i];
-            all += L"  ";
-            all += name;
-            all += L"\r\n";
-        }
-    }
-    return all;
-}
-
-static void DoExport(HWND hwnd, PageState* st) {
-    if (!st->done) {
-        SetStatus(hwnd, Lang::Get(Lang::Id::ComputeFirst));
-        return;
-    }
-    Job* job = st->ctx->job;
-    if (!job) return;
-
-    const bool multi = job->paths.size() > 1;
-    const wchar_t* name = PathFindFileNameW(job->paths[st->cur].c_str());
-    // 多选时建议名用公共前缀更自然，这里取第一个文件的名词干 + _hashes
-    std::wstring suggested;
-    if (multi) {
-        const wchar_t* dot = wcsrchr(name, L'.');
-        std::wstring stem = dot ? std::wstring(name, dot - name) : std::wstring(name);
-        suggested = stem + L"_hashes.SUMS.txt";
-    } else {
-        suggested = std::wstring(name) + L".SUMS.txt";
-    }
-
-    std::wstring target;
-    if (!PickSavePath(hwnd, suggested, &target)) return;
-
-    // 不允许把结果写回任何被哈希的文件：CREATE_ALWAYS 会直接截断源文件
-    for (const auto& p : job->paths) {
-        if (PathUtil::SameFile(target, p)) {
-            SetStatus(hwnd, Lang::Get(Lang::Id::SourceIsTarget));
-            return;
-        }
-    }
-
-    std::string utf8;
-    size_t exported = 0;
-    if (multi) {
-        EnterCriticalSection(&job->cs);
-        const std::wstring all = BuildMultiLines(job, st->algo);
-        size_t count = 0;
-        for (size_t f = 0; f < job->results.size(); ++f)
-            if (job->results[f].finished) ++count;
-        LeaveCriticalSection(&job->cs);
-        utf8 = ToUtf8(all);
-        exported = count;
-    } else {
-        utf8 = ToUtf8(BuildAllLines(hwnd, name, st->algo));
-        exported = 1;
-    }
-
-    HANDLE f = CreateFileW(LongPath(target).c_str(), GENERIC_WRITE, 0, nullptr,
-                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (f == INVALID_HANDLE_VALUE) {
-        SetStatus(hwnd, Lang::Get(Lang::Id::ExportFail));
-        return;
-    }
-    DWORD written = 0;
-    const BOOL wrote = WriteFile(f, utf8.data(), static_cast<DWORD>(utf8.size()), &written, nullptr);
-    // 落盘后再关：CloseHandle 不保证数据已写出，磁盘满时要靠 Flush 才能发现
-    const BOOL flushed = wrote && written == utf8.size() ? FlushFileBuffers(f) : FALSE;
-    CloseHandle(f);
-    if (!flushed) {
-        SetStatus(hwnd, Lang::Get(Lang::Id::ExportWriteFail));
-        return;
-    }
-
-    if (multi) {
-        wchar_t buf[128];
-        swprintf(buf, 128, Lang::Get(Lang::Id::MultiExportHint),
-                 static_cast<unsigned>(exported));
-        SetStatus(hwnd, buf);
-    } else {
-        SetStatus(hwnd, Lang::Get(Lang::Id::Exported));
-    }
-    SetTimer(hwnd, TIMER_EXPORT, 2000, nullptr);
-}
-
-// ---------------------------------------------------------------- 弹出菜单
-
-// 版本号（.rc 的 FILEVERSION 需同步改；菜单「关于」项显示的就是它）
-static constexpr wchar_t kVersionText[] = L"1.3.0";
-
-// 自绘菜单项：所有弹出菜单统一走 MF_OWNERDRAW。
-// 浅色下模仿系统菜单配色；深色下套页面主题（系统菜单不跟随暗色，
-// 直接用 TrackPopupMenu 会在深色页面上开出一块浅色菜单）。
-struct MenuEntry {
-    const wchar_t* text;   // nullptr = 分隔线
-    UINT id;               // WM_COMMAND 命令 ID
-    bool checked;
-    bool underline;        // 文字下画线（表示可点击的外链）
-};
-
-// 菜单字体：首次使用时从系统菜单字体缓存到页面状态
-static HFONT EnsureMenuFont(PageState* st) {
-    if (!st->menuFont) {
-        NONCLIENTMETRICSW ncm{};
-        ncm.cbSize = sizeof(ncm);
-        if (SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0))
-            st->menuFont = CreateFontIndirectW(&ncm.lfMenuFont);
-    }
-    return st->menuFont;
-}
-
-// 弹出统一自绘的菜单。items 指向的文本必须在 TrackPopupMenu 返回前有效，
-// 因此调用方一律用栈数组 / 局部 vector。
-static void ShowPopupMenu(HWND hwnd, PageState* st, MenuEntry* items, int count, POINT pt) {
-    EnsureMenuFont(st);
-    HMENU menu = CreatePopupMenu();
-    if (!menu) return;
-    for (int i = 0; i < count; ++i) {
-        // MF_OWNERDRAW 的 lpNewItem 即 WM_MEASUREITEM/WM_DRAWITEM 的 itemData
-        AppendMenuW(menu, MF_OWNERDRAW, items[i].id,
-                    reinterpret_cast<LPCWSTR>(&items[i]));
-    }
-    TrackPopupMenu(menu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN, pt.x, pt.y, 0, hwnd, nullptr);
-    DestroyMenu(menu);
-}
-
-// 自绘单个菜单项
-static void DrawMenuEntry(const DRAWITEMSTRUCT* dis, HFONT font) {
-    auto e = reinterpret_cast<const MenuEntry*>(dis->itemData);
-    if (!e) return;
-    const bool dark = Theme::IsDark();
-    const bool hot = (dis->itemState & ODS_SELECTED) != 0;
-
-    // 底色：深色跟主题，浅色跟系统菜单
-    const COLORREF bg = dark ? (hot ? RGB(62, 62, 62) : Theme::Bg())
-                             : GetSysColor(hot ? COLOR_HIGHLIGHT : COLOR_MENU);
-    HBRUSH b = CreateSolidBrush(bg);
-    FillRect(dis->hDC, &dis->rcItem, b);
-    DeleteObject(b);
-
-    if (!e->text) {   // 分隔线
-        RECT r = dis->rcItem;
-        r.top = (r.top + r.bottom) / 2;
-        r.bottom = r.top + 1;
-        r.left += 10;
-        r.right -= 10;
-        HBRUSH line = CreateSolidBrush(dark ? RGB(72, 72, 72) : GetSysColor(COLOR_BTNSHADOW));
-        FillRect(dis->hDC, &r, line);
-        DeleteObject(line);
-        return;
-    }
-
-    const COLORREF fg = dark ? Theme::Text()
-                             : GetSysColor(hot ? COLOR_HIGHLIGHTTEXT : COLOR_MENUTEXT);
-    SetBkMode(dis->hDC, TRANSPARENT);
-    SetTextColor(dis->hDC, fg);
-    HGDIOBJ oldFont = font ? SelectObject(dis->hDC, font) : nullptr;
-
-    // 左侧勾选列
-    if (e->checked) {
-        RECT ck = dis->rcItem;
-        ck.left += 7;
-        ck.right = ck.left + 14;
-        DrawTextW(dis->hDC, L"\u2713", -1, &ck,
-                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-    }
-
-    RECT rc = dis->rcItem;
-    rc.left += 24;
-    rc.right -= 8;
-    DrawTextW(dis->hDC, e->text, -1, &rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-
-    // 下划线：文字底部，宽度与文字等宽
-    if (e->underline) {
-        SIZE sz{};
-        if (GetTextExtentPoint32W(dis->hDC, e->text, static_cast<int>(wcslen(e->text)), &sz)) {
-            const int mid = (dis->rcItem.top + dis->rcItem.bottom) / 2;
-            const int y = mid + sz.cy / 2;
-            HPEN pen = CreatePen(PS_SOLID, 1, fg);
-            HGDIOBJ oldPen = SelectObject(dis->hDC, pen);
-            MoveToEx(dis->hDC, rc.left, y, nullptr);
-            LineTo(dis->hDC, rc.left + sz.cx, y);
-            SelectObject(dis->hDC, oldPen);
-            DeleteObject(pen);
-        }
-    }
-
-    if (oldFont) SelectObject(dis->hDC, oldFont);
-}
-
-// 多选时的文件跳转菜单（IDC_FILESEL）：列出全部文件，勾选当前项
-static void ShowFilesMenu(HWND hwnd, PageState* st) {
-    const size_t n = st->ctx->paths.size();
-    if (n <= 1) return;
-
-    std::vector<std::wstring> names;
-    names.reserve(n);
-    for (const auto& p : st->ctx->paths)
-        names.emplace_back(PathFindFileNameW(p.c_str()));
-
-    std::vector<MenuEntry> items;
-    items.reserve(n);
-    for (size_t i = 0; i < n; ++i) {
-        items.push_back(MenuEntry{ names[i].c_str(),
-                                   static_cast<UINT>(IDM_FILE_BASE + i),
-                                   i == st->cur, false });
-    }
-
-    RECT rc{};
-    GetWindowRect(GetDlgItem(hwnd, IDC_FILESEL), &rc);
-    const POINT pt{ rc.left, rc.bottom };
-    ShowPopupMenu(hwnd, st, items.data(), static_cast<int>(items.size()), pt);
-}
-
-// 项目主页
-static void OpenProjectPage(HWND hwnd) {
-    // ShellExecute 不需要可写命令行缓冲，也无 PATH_MAX 限制
-    ShellExecuteW(hwnd, L"open",
-                  L"https://github.com/louisgeek/LG_Hash",
-                  nullptr, nullptr, SW_SHOWNORMAL);
-}
-
-// ---------------------------------------------------------------- 设置对话框
-
-// 独立设置对话框（参考 HashCheck 的形态）：算法勾选网格 + 显示选项 +
-// 左下角项目链接，底部确定/取消。属性页不再内联这些控件，页面更清爽。
-struct SettingsDlgState {
-    bool algo[kHashCount];
-    bool upper = false;
-    bool dark = false;
-    HBRUSH bg = nullptr;
-    HFONT linkFont = nullptr;
-};
-
-static const int kSetAlgoIds[kHashCount] = {
-    IDC_SET_CRC32, IDC_SET_MD5, IDC_SET_SHA1, IDC_SET_SHA256, IDC_SET_SHA512,
-};
-static const Lang::Id kSetAlgoLangs[kHashCount] = {
-    Lang::Id::AlgoCRC32, Lang::Id::AlgoMD5, Lang::Id::AlgoSHA1,
-    Lang::Id::AlgoSHA256, Lang::Id::AlgoSHA512,
-};
-
-static INT_PTR CALLBACK SettingsProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam) {
-    auto ds = reinterpret_cast<SettingsDlgState*>(GetWindowLongPtrW(dlg, GWLP_USERDATA));
-
-    switch (msg) {
-    case WM_INITDIALOG: {
-        ds = reinterpret_cast<SettingsDlgState*>(lParam);
-        SetWindowLongPtrW(dlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(ds));
-        if (!ds) return FALSE;
-
-        Theme::Refresh();
-        ds->dark = Theme::IsDark();
-        if (ds->dark) ds->bg = CreateSolidBrush(Theme::Bg());
-
-        SetWindowTextW(dlg, Lang::Get(Lang::Id::SettingsTitle));
-        SetDlgItemTextW(dlg, IDC_SET_ALGOGROUP, Lang::Get(Lang::Id::AlgoGroup));
-        SetDlgItemTextW(dlg, IDC_SET_DISPGROUP, Lang::Get(Lang::Id::DisplayGroup));
-        SetDlgItemTextW(dlg, IDOK, Lang::Get(Lang::Id::DlgOk));
-        SetDlgItemTextW(dlg, IDCANCEL, Lang::Get(Lang::Id::DlgCancel));
-        SetDlgItemTextW(dlg, IDC_SET_UPPER, Lang::Get(Lang::Id::MenuUppercase));
-        for (int i = 0; i < kHashCount; ++i) {
-            SetDlgItemTextW(dlg, kSetAlgoIds[i], Lang::Get(kSetAlgoLangs[i]));
-            SendMessageW(GetDlgItem(dlg, kSetAlgoIds[i]), BM_SETCHECK,
-                         ds->algo[i] ? BST_CHECKED : BST_UNCHECKED, 0);
-        }
-        SendMessageW(GetDlgItem(dlg, IDC_SET_UPPER), BM_SETCHECK,
-                     ds->upper ? BST_CHECKED : BST_UNCHECKED, 0);
-
-        // 左下角项目链接：显示版本号，套下划线字体（静态文本不支持富文本）
-        {
-            wchar_t link[64];
-            swprintf(link, 64, L"LG_Hash %s", kVersionText);
-            HWND ctl = GetDlgItem(dlg, IDC_SET_LINK);
-            SetWindowTextW(ctl, link);
-            LOGFONTW lf{};
-            HFONT base = reinterpret_cast<HFONT>(SendMessageW(dlg, WM_GETFONT, 0, 0));
-            if (base && GetObjectW(base, sizeof(lf), &lf)) {
-                lf.lfUnderline = TRUE;
-                ds->linkFont = CreateFontIndirectW(&lf);
-                if (ds->linkFont)
-                    SendMessageW(ctl, WM_SETFONT, reinterpret_cast<WPARAM>(ds->linkFont), TRUE);
-            }
-        }
-
-        if (ds->dark) {
-            // 深色下按钮同样走自绘，避免浅色按钮压在深色底上
-            for (int id : { IDOK, IDCANCEL }) {
-                HWND b = GetDlgItem(dlg, id);
-                if (!b) continue;
-                const LONG_PTR style = GetWindowLongPtrW(b, GWL_STYLE);
-                SetWindowLongPtrW(b, GWL_STYLE, (style & ~BS_TYPEMASK) | BS_OWNERDRAW);
-                InvalidateRect(b, nullptr, TRUE);
-            }
-        }
-        return TRUE;
-    }
-
-    case WM_COMMAND:
-        if (!ds) break;
-        switch (LOWORD(wParam)) {
-        case IDOK:
-            for (int i = 0; i < kHashCount; ++i) {
-                ds->algo[i] =
-                    (SendMessageW(GetDlgItem(dlg, kSetAlgoIds[i]), BM_GETCHECK, 0, 0)
-                     & BST_CHECKED) != 0;
-            }
-            ds->upper =
-                (SendMessageW(GetDlgItem(dlg, IDC_SET_UPPER), BM_GETCHECK, 0, 0)
-                 & BST_CHECKED) != 0;
-            EndDialog(dlg, 1);
-            return TRUE;
-        case IDCANCEL:
-            EndDialog(dlg, 0);
-            return TRUE;
-        case IDC_SET_LINK:
-            if (HIWORD(wParam) == STN_CLICKED) OpenProjectPage(dlg);
-            return TRUE;
-        default:
-            break;
-        }
-        break;
-
-    case WM_DRAWITEM:
-        return DrawOwnerButton(reinterpret_cast<DRAWITEMSTRUCT*>(lParam));
-
-    case WM_CTLCOLORSTATIC:
-        if (ds) {
-            HDC hdc = reinterpret_cast<HDC>(wParam);
-            const int id = GetDlgCtrlID(reinterpret_cast<HWND>(lParam));
-            SetBkMode(hdc, TRANSPARENT);
-            if (id == IDC_SET_LINK) {
-                // 链接用蓝色（深色下也是蓝，保证可辨识）
-                SetTextColor(hdc, Theme::IsDark() ? RGB(106, 168, 255) : RGB(0, 102, 204));
-            } else {
-                SetTextColor(hdc, Theme::IsDark() ? Theme::Text() : GetSysColor(COLOR_WINDOWTEXT));
-            }
-            return reinterpret_cast<INT_PTR>(ds->dark ? ds->bg : GetSysColorBrush(COLOR_BTNFACE));
-        }
-        break;
-
-    case WM_CTLCOLORBTN:
-        if (ds && ds->dark) {
-            HDC hdc = reinterpret_cast<HDC>(wParam);
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, Theme::Text());
-            return reinterpret_cast<INT_PTR>(ds->bg);
-        }
-        break;
-
-    case WM_ERASEBKGND:
-        if (ds && ds->dark) {
-            RECT rc;
-            GetClientRect(dlg, &rc);
-            FillRect(reinterpret_cast<HDC>(wParam), &rc, ds->bg);
-            return 1;
-        }
-        break;
-
-    case WM_DESTROY:
-        if (ds) {
-            if (ds->bg) DeleteObject(ds->bg);
-            if (ds->linkFont) DeleteObject(ds->linkFont);
-        }
-        break;
-    }
-    return FALSE;
-}
-
-// 打开设置对话框；点「确定」时把选择写回并刷新属性页
-static void OpenSettings(HWND hwnd, PageState* st) {
-    SettingsDlgState ds{};
-    for (int i = 0; i < kHashCount; ++i) ds.algo[i] = st->algo[i];
-    ds.upper = st->upper;
-
-    if (DialogBoxParamW(g_hModule, MAKEINTRESOURCEW(IDD_SETTINGS),
-                        hwnd, SettingsProc, reinterpret_cast<LPARAM>(&ds)) != 1) {
-        return;   // 取消：不写回
-    }
-
-    bool changed = ds.upper != st->upper;
-    for (int i = 0; i < kHashCount; ++i) {
-        if (ds.algo[i] != st->algo[i]) changed = true;
-        st->algo[i] = ds.algo[i];
-    }
-    st->upper = ds.upper;
-    if (!changed) return;
-
-    SaveSettings(st);
-    if (st->done) {
-        RenderCurrent(hwnd, st);   // 勾选/大小写变化只重渲染，不重读盘
-        EvaluateVerify(hwnd, st);
-    }
-}
-
-// ---------------------------------------------------------------- 外观
-
-// 深色下列头也要自绘：header 是独立控件，ListView 的颜色设置管不到它
-static LRESULT CustomDrawHeader(LPNMCUSTOMDRAW cd) {
-    switch (cd->dwDrawStage) {
-    case CDDS_PREPAINT: {
-        // 先把整个列头区域刷成主题色，避免未覆盖处露出系统浅色
-        RECT all = cd->rc;
-        HBRUSH bg = CreateSolidBrush(Theme::Bg());
-        FillRect(cd->hdc, &all, bg);
-        DeleteObject(bg);
-        return CDRF_NOTIFYITEMDRAW;
-    }
-    case CDDS_ITEMPREPAINT: {
-        RECT rc = cd->rc;
-        HBRUSH bg = CreateSolidBrush(Theme::Bg());
-        FillRect(cd->hdc, &rc, bg);
-        DeleteObject(bg);
-
-        // 细分隔线，避免深色下一片糊在一起
-        HPEN pen = CreatePen(PS_SOLID, 1, Theme::IsDark() ? RGB(70, 70, 70) : GetSysColor(COLOR_BTNSHADOW));
-        HGDIOBJ oldPen = SelectObject(cd->hdc, pen);
-        MoveToEx(cd->hdc, rc.right - 1, rc.top + 2, nullptr);
-        LineTo(cd->hdc, rc.right - 1, rc.bottom - 2);
-        SelectObject(cd->hdc, oldPen);
-        DeleteObject(pen);
-
-        wchar_t text[128] = {};
-        // 列号即 item 序号，文字用当前语言表
-        if (cd->dwItemSpec == 0)
-            wcscpy_s(text, Lang::Get(Lang::Id::AlgoColumn));
-        else
-            wcscpy_s(text, Lang::Get(Lang::Id::HashColumn));
-
-        SetBkMode(cd->hdc, TRANSPARENT);
-        SetTextColor(cd->hdc, Theme::Dim());
-        HFONT font = reinterpret_cast<HFONT>(SendMessageW(cd->hdr.hwndFrom, WM_GETFONT, 0, 0));
-        HGDIOBJ oldFont = font ? SelectObject(cd->hdc, font) : nullptr;
-        RECT tr = rc;
-        tr.left += 6;
-        DrawTextW(cd->hdc, text, -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        if (oldFont) SelectObject(cd->hdc, oldFont);
-        return CDRF_SKIPDEFAULT;
-    }
-    default:
-        break;
-    }
-    return CDRF_DODEFAULT;
-}
-
-// 校验框占位提示：部分系统构建不支持 EM_SETCUEBANNER（实测返回 0），
-// 这里用「空态时把提示文字放进输入框」的方式等价实现：
-// 聚焦时清空，失焦且为空时恢复，配色走 WM_CTLCOLOREDIT 的灰色分支。
-static void SetVerifyCue(HWND hwnd, PageState* st, bool show) {
-    HWND edit = GetDlgItem(hwnd, IDC_VERIFY);
-    if (!edit) return;
-    // 必须先置标志再改文本：SetWindowText 会同步触发 EN_CHANGE，
-    // 若标志还是旧值，占位文字会被当成用户输入去校验，误显示「不匹配」
-    st->cueShown = show;
-    SetWindowTextW(edit, show ? Lang::Get(Lang::Id::VerifyCue) : L"");
-}
-
-static void ApplyLanguage(HWND hwnd) {
-    SetDlgItemTextW(hwnd, IDC_VERIFYGROUP, Lang::Get(Lang::Id::VerifyGroup));
-    SetDlgItemTextW(hwnd, IDC_COPYSEL, Lang::Get(Lang::Id::CopySelected));
-    SetDlgItemTextW(hwnd, IDC_COPYALL, Lang::Get(Lang::Id::CopyAll));
-    SetDlgItemTextW(hwnd, IDC_EXPORT, Lang::Get(Lang::Id::Export));
-    SetDlgItemTextW(hwnd, IDC_SETTINGS_BTN, Lang::Get(Lang::Id::SettingsTitle));
-    SetDlgItemTextW(hwnd, IDC_PREV, Lang::Get(Lang::Id::PrevFile));
-    SetDlgItemTextW(hwnd, IDC_NEXT, Lang::Get(Lang::Id::NextFile));
-    // IDC_REHASH 的文案随状态变化（计算 / 取消 / 重新计算），
-    // 由 WM_INITDIALOG 与 StartJob/OnDone 分别设置，这里不碰，避免闪一下错字。
-    HWND list = GetDlgItem(hwnd, IDC_HASHLIST);
-    if (list) {
-        LVCOLUMNW col{};
-        col.mask = LVCF_TEXT;
-        col.pszText = const_cast<wchar_t*>(Lang::Get(Lang::Id::AlgoColumn));
-        ListView_SetColumn(list, 0, &col);
-        col.pszText = const_cast<wchar_t*>(Lang::Get(Lang::Id::HashColumn));
-        ListView_SetColumn(list, 1, &col);
-    }
-}
-
-// 给按钮加上 BS_OWNERDRAW，使其改由 DrawOwnerButton 绘制。
-// 只在深色模式下这么做：浅色模式交给系统主题，能和宿主属性表保持一致。
-static void EnableOwnerDraw(HWND page) {
-    for (int id : { IDC_COPYSEL, IDC_COPYALL, IDC_EXPORT, IDC_REHASH,
-                    IDC_PREV, IDC_NEXT, IDC_FILESEL, IDC_SETTINGS_BTN }) {
-        HWND btn = GetDlgItem(page, id);
-        if (!btn) continue;
-        const LONG_PTR style = GetWindowLongPtrW(btn, GWL_STYLE);
-        if (style & BS_OWNERDRAW) continue;
-        SetWindowLongPtrW(btn, GWL_STYLE, (style & ~BS_TYPEMASK) | BS_OWNERDRAW);
-        InvalidateRect(btn, nullptr, TRUE);
-    }
-}
-
-// 深色模式下按钮走 owner-draw：直接用系统主题画会得到浅色按钮压在深色底上。
-static LRESULT DrawOwnerButton(const DRAWITEMSTRUCT* dis) {
-    const bool disabled = (dis->itemState & ODS_DISABLED) != 0;
-    const bool pressed = (dis->itemState & ODS_SELECTED) != 0;
-    const bool focused = (dis->itemState & ODS_FOCUS) != 0;
-
-    COLORREF face = Theme::IsDark() ? RGB(58, 58, 58) : GetSysColor(COLOR_BTNFACE);
-    COLORREF edge = Theme::IsDark() ? RGB(90, 90, 90) : GetSysColor(COLOR_BTNSHADOW);
-    if (pressed) face = Theme::IsDark() ? RGB(44, 44, 44) : GetSysColor(COLOR_BTNSHADOW);
-    if (disabled) face = Theme::Bg();
-
-    HBRUSH br = CreateSolidBrush(face);
-    FillRect(dis->hDC, &dis->rcItem, br);
-    DeleteObject(br);
-
-    HPEN pen = CreatePen(PS_SOLID, 1, edge);
-    HGDIOBJ oldPen = SelectObject(dis->hDC, pen);
-    HGDIOBJ oldBrush = SelectObject(dis->hDC, GetStockObject(NULL_BRUSH));
-    Rectangle(dis->hDC, dis->rcItem.left, dis->rcItem.top,
-              dis->rcItem.right, dis->rcItem.bottom);
-    SelectObject(dis->hDC, oldBrush);
-    SelectObject(dis->hDC, oldPen);
-    DeleteObject(pen);
-
-    wchar_t text[128] = {};
-    GetWindowTextW(dis->hwndItem, text, 128);
-    SetBkMode(dis->hDC, TRANSPARENT);
-    SetTextColor(dis->hDC, disabled ? Theme::Dim() : Theme::Text());
-    HGDIOBJ oldFont = SelectObject(dis->hDC, GetWindowFont(dis->hwndItem));
-    RECT rc = dis->rcItem;
-    if (pressed) OffsetRect(&rc, 1, 1);
-    DrawTextW(dis->hDC, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    SelectObject(dis->hDC, oldFont);
-
-    if (focused) {
-        RECT r = dis->rcItem;
-        InflateRect(&r, -3, -3);
-        DrawFocusRect(dis->hDC, &r);
-    }
-    return TRUE;
 }
 
 // ---------------------------------------------------------------- 主流程
@@ -1171,6 +440,9 @@ INT_PTR CALLBACK LG_HashProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
 
         INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_LISTVIEW_CLASSES | ICC_PROGRESS_CLASS };
         InitCommonControlsEx(&icc);
+        // 两个都是「读注册表 + 缓存」的模块：每次建页都刷新，使「改完设置下次打开」
+        // 即生效，不必重启 explorer.exe。值没变时 Lang::Refresh 只做一次轻量读。
+        Lang::Refresh();
         Theme::Refresh();
         st->bgBrush = CreateSolidBrush(Theme::Bg());
         st->panelBrush = CreateSolidBrush(Theme::Panel());
@@ -1563,5 +835,3 @@ UINT CALLBACK LG_HashCallback(HWND, UINT msg, LPPROPSHEETPAGEW ppsp) {
         delete reinterpret_cast<PageContext*>(ppsp->lParam);
     return 1;
 }
-
-

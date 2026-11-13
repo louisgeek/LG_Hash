@@ -12,7 +12,8 @@ dist/
 edge_*.bin
 change_probe.bin
 *.SUMS.txt
-*.png
+# 测试截图（verify_*.ps1 输出到 build\，已在上面整体忽略）
+shot_*.png
 
 # Test fixtures (regenerable via test/make_fixtures.ps1)
 large.bin
